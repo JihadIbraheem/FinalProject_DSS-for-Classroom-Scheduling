@@ -1,1 +1,2 @@
 # FinalProject_DSS-for-Classroom-Scheduling
+Developing a decision support system and management tool designed to handle classroom scheduling on a university campus. Our system offers a solution for managing classroom scheduling at the City Campus, detecting conflicts during updates, and handling issues and requests in real-time while taking into account predefined constraints. It also provides a user-friendly interface.
