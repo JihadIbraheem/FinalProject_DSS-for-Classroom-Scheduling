@@ -72,3 +72,13 @@ footer {
     position: fixed;
     bottom: 0;
 }
+
+.home-link {
+    color: white; /* צבע טקסט */
+    text-decoration: none; /* הסרת קו תחתון */
+}
+
+.home-link:hover {
+    text-decoration: underline; /* הוספת קו תחתון בעת ריחוף */
+}
+
