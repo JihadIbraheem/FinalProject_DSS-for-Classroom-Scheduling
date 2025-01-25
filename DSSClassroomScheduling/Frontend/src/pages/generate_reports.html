@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generate Reports</title>
+    <link rel="stylesheet" href="../styles.css">
+
+</head>
+<body>
+    <header>
+        <h1>Classroom Scheduling System</h1>
+    </header>
+    <main>
+        <h2>Generate Reports</h2>
+        <form action="/generate-reports" method="POST">
+            <label for="report-type">Select Report Type</label>
+            <select id="report-type" name="report-type">
+                <option value="classroom-utilization">Classroom Utilization</option>
+                <option value="course-schedules">Course Schedules</option>
+                <option value="instructor-schedules">Instructor Schedules</option>
+            </select>
+
+            <label for="time-period">Time Period</label>
+            <select id="time-period" name="time-period">
+                <option value="week">Weekly</option>
+                <option value="month">Monthly</option>
+                <option value="semester">Semester</option>
+            </select>
+
+            <button type="submit">Generate Report</button>
+        </form>
+    </main>
+    <footer>
+        <p>&copy; 2025 Classroom Scheduling System</p>
+    </footer>
+</body>
+</html>
