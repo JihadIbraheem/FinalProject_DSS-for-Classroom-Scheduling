@@ -1,16 +1,14 @@
 from flask import Flask, render_template, request, redirect, url_for, flash
 import mysql.connector
 
-# הגדרת Flask עם נתיב מותאם
 app = Flask(
     __name__,
-    template_folder='../Frontend/src/pages',  # נתיב לתבניות (HTML)
-    static_folder='../Frontend/src'          # נתיב לקבצים סטטיים (CSS, JS)
+    template_folder='../Frontend/src/pages',  
+    static_folder='../Frontend/src'         
 )
 
 app.secret_key = 'your_secret_key'
 
-# חיבור למסד הנתונים
 db = mysql.connector.connect(
     host="localhost",
     user="root",
