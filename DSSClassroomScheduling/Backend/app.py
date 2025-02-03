@@ -1,4 +1,5 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory
+from flask import Flask, render_template, request, redirect, url_for, flash, session, send_from_directory
+import os
 import mysql.connector
 
 # יצירת אפליקציית Flask
@@ -35,30 +36,74 @@ def login():
         user = cursor.fetchone()
 
         if user:
-            print("המשתמש נמצא במסד הנתונים:", user)
+            print("The user is in the database:", user)
             return redirect(url_for('home'))
         else:
-            print("לא נמצא משתמש בשם:", username)
+            print("No user found with the name:", username)
             flash('Invalid username or password!')
             return redirect(url_for('login'))
 
     return render_template('login.html')
+
+
+# מסלול להתנתקות
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
 
 # מסלול לדף הבית
 @app.route('/home')
 def home():
     return render_template('home.html')
 
-# מסלול לקבצים סטטיים
-@app.route('/static/<path:filename>')
-def static_files(filename):
-    return send_from_directory(app.static_folder, filename)
+# מסלול לדף העלאת קבצים
+@app.route('/upload', methods=['GET', 'POST'])
+def upload():
+    if request.method == 'POST':
+        file = request.files['file']
+        if file:
+            upload_folder = './uploads'
+            os.makedirs(upload_folder, exist_ok=True)
+            file.save(os.path.join(upload_folder, file.filename))
+            flash('File uploaded successfully!')
+            return redirect(url_for('home'))
+        else:
+            flash('No file selected!')
+            return redirect(url_for('upload'))
+    return render_template('upload.html')
 
-# הפעלת האפליקציה
+# מסלול לבקשת מערכת שעות
+@app.route('/request_schedule', methods=['GET', 'POST'])
+def request_schedule():
+    if request.method == 'POST':
+        course_name = request.form['course-name']
+        instructor_name = request.form['instructor-name']
+        preferred_time = request.form['preferred-time']
+        preferred_room = request.form['preferred-room']
+        special_requirements = request.form['special-requirements']
+
+        flash('Schedule request submitted successfully!')
+        return redirect(url_for('home'))
+
+    return render_template('request_schedule.html')
+
+# מסלול ליצירת דוחות
+@app.route('/generate_reports', methods=['GET', 'POST'])
+def generate_reports():
+    if request.method == 'POST':
+        report_type = request.form['report-type']
+        time_period = request.form['time-period']
+
+        flash(f'Report "{report_type}" for "{time_period}" generated successfully!')
+        return redirect(url_for('home'))
+
+    return render_template('generate_reports.html')
+
 if __name__ == '__main__':
     try:
         db.ping(reconnect=True)
-        print("החיבור למסד הנתונים פעיל!")
+        print("The database connection is active!")
     except mysql.connector.Error as err:
-        print("שגיאה בחיבור למסד הנתונים:", err)
+        print("Error connecting to the database:", err)
     app.run(debug=True)

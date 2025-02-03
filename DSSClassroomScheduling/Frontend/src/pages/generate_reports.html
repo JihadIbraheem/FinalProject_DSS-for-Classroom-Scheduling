@@ -4,18 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Generate Reports</title>
-    <link rel="stylesheet" href="styles.css">
-
+    <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
     <header>
         <h1>
-            <a href="home.html" class="home-link">Classroom Scheduling System</a>
+            <a href="/home" class="home-link">Classroom Scheduling System</a>
         </h1>
     </header>
     <main>
         <h2>Generate Reports</h2>
-        <form action="/generate-reports" method="POST">
+        <form action="/generate_reports" method="POST">
             <label for="report-type">Select Report Type</label>
             <select id="report-type" name="report-type">
                 <option value="classroom-utilization">Classroom Utilization</option>
@@ -32,6 +31,17 @@
 
             <button type="submit">Generate Report</button>
         </form>
+
+        <!-- הצגת הודעות פלאש (Flash Messages) -->
+        {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            <ul class="flash-messages">
+                {% for message in messages %}
+                    <li>{{ message }}</li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+        {% endwith %}
     </main>
     <footer>
         <p>&copy; 2025 Classroom Scheduling System</p>

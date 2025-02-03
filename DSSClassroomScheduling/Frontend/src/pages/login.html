@@ -21,17 +21,6 @@
             
             <button type="submit">Login</button>
         </form>
-
-        <!-- הודעות שגיאה או הצלחה -->
-        {% with messages = get_flashed_messages() %}
-        {% if messages %}
-        <ul>
-            {% for message in messages %}
-            <li>{{ message }}</li>
-            {% endfor %}
-        </ul>
-        {% endif %}
-        {% endwith %}
     </main>
     <footer>
         <p>&copy; 2025 Classroom Scheduling System</p>
