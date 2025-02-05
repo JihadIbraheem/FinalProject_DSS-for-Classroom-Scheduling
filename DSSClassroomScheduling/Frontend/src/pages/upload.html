@@ -18,8 +18,19 @@
             <label for="file">Choose a File</label>
             <input type="file" id="file" name="file" accept=".xls,.xlsx" required>
             <button type="submit">Upload</button>
-        </form>        
-
+        </form>
+        <form action="/delete_data" method="POST" style="margin-top: 20px;">
+            <button type="submit" style="background-color: red; color: white;">Delete Existing Data</button>
+        </form>
+        {% with messages = get_flashed_messages() %}
+        {% if messages %}
+        <ul>
+            {% for message in messages %}
+            <li>{{ message }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        {% endwith %}
     </main>
     <footer>
         <p>&copy; 2025 Classroom Scheduling System</p>
