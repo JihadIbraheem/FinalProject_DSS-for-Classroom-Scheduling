@@ -14,27 +14,73 @@
         </h1>
     </header>
     <main>
-        <h2>Request a Schedule</h2>
-        <form action="/request_schedule" method="POST">
-            <label for="course-name">Course Name</label>
-            <input type="text" id="course-name" name="course-name" required>
+            <h2>Update Schedule</h2>
+            <form id="select-schedule-form" method="GET">
+                <label for="schedule-id">Select Schedule</label>
+                <select id="schedule-id" name="schedule-id" onchange="fetchScheduleDetails(this.value)">
+                    <option value="">Select...</option>
+                </select>
+            </form>
         
-            <label for="instructor-name">Instructor Name</label>
-            <input type="text" id="instructor-name" name="instructor-name" required>
+            <form id="update-schedule-form" action="/update_schedule" method="POST">
+                <input type="hidden" id="schedule_id" name="schedule_id">
+                <label for="classroom_id">Classroom ID</label>
+                <input type="text" id="classroom_id" name="classroom_id" required>
         
-            <label for="preferred-time">Preferred Time</label>
-            <input type="time" id="preferred-time" name="preferred-time">
+                <label for="course_id">Course ID</label>
+                <input type="text" id="course_id" name="course_id" required>
         
-            <label for="preferred-room">Preferred Room</label>
-            <input type="text" id="preferred-room" name="preferred-room">
+                <label for="schedule_datetime">Schedule Date</label>
+                <input type="datetime-local" id="schedule_datetime" name="schedule_datetime" required>
         
-            <label for="special-requirements">Special Requirements</label>
-            <textarea id="special-requirements" name="special-requirements" rows="4"></textarea>
+                <label for="status">Status</label>
+                <input type="text" id="status" name="status" required>
         
-            <button type="submit">Submit Request</button>
-        </form>
+                <label for="time_start">Start Time</label>
+                <input type="time" id="time_start" name="time_start" required>
         
-    </main>
+                <label for="time_end">End Time</label>
+                <input type="time" id="time_end" name="time_end" required>
+        
+                <button type="submit">Update Schedule</button>
+            </form>
+        </main>
+        
+        <script>
+            // Fetch schedules to populate the dropdown
+            fetch('/get_schedules')
+                .then(response => response.json())
+                .then(data => {
+                    const scheduleSelect = document.getElementById('schedule-id');
+                    data.schedules.forEach(schedule => {
+                        const option = document.createElement('option');
+                        option.value = schedule.schedule_id;
+                        option.textContent = `Schedule ID: ${schedule.schedule_id} - ${schedule.status}`;
+                        scheduleSelect.appendChild(option);
+                    });
+                });
+        
+            // Fetch details of the selected schedule
+            function fetchScheduleDetails(scheduleId) {
+                if (!scheduleId) return;
+        
+                fetch(`/get_schedules`)
+                    .then(response => response.json())
+                    .then(data => {
+                        const schedule = data.schedules.find(s => s.schedule_id == scheduleId);
+                        if (schedule) {
+                            document.getElementById('schedule_id').value = schedule.schedule_id;
+                            document.getElementById('classroom_id').value = schedule.classroom_id;
+                            document.getElementById('course_id').value = schedule.course_id;
+                            document.getElementById('schedule_datetime').value = schedule.schedule_datetime.replace(' ', 'T');
+                            document.getElementById('status').value = schedule.status;
+                            document.getElementById('time_start').value = schedule.time_start;
+                            document.getElementById('time_end').value = schedule.time_end;
+                        }
+                    });
+            }
+        </script>
+      
     <footer>
         <p>&copy; 2025 Classroom Scheduling System</p>
     </footer>

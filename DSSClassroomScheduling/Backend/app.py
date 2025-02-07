@@ -1,8 +1,11 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import jsonify
+
 import os
 import pandas as pd
 import mysql.connector
-from datetime import datetime
+from datetime import datetime, time, timedelta
+
 
 app = Flask(__name__)
 
@@ -20,6 +23,11 @@ db = mysql.connector.connect(
     password="212165351Hala",
     database="classroom_scheduling"
 )
+
+# מסלול ברירת מחדל - עמוד הבית
+@app.route('/')
+def default_home():
+    return redirect(url_for('home'))
 
 # פונקציה לבדיקה אם יש נתונים קיימים בטבלה
 def is_data_existing():
@@ -48,6 +56,7 @@ def process_file(file):
     data['date'] = pd.to_datetime(data['date'], errors='coerce')
     data.dropna(inplace=True)  # מחיקת שורות עם נתונים חסרים
     return data
+
 
 # פונקציה להוספת נתונים חדשים לטבלת schedules
 def insert_data_to_db(data):
@@ -162,6 +171,68 @@ def logout():
     session.clear()
     flash('Logged out successfully!')
     return redirect(url_for('login'))
+
+# מסלול להצגת שיבוצים קיימים
+@app.route('/get_schedules', methods=['GET'])
+def get_schedules():
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM schedules")
+    schedules = cursor.fetchall()
+    cursor.close()
+
+    # המרה של datetime, time, timedelta למחרוזות והוספת ערכים קבועים ברירת מחדל
+    for schedule in schedules:
+        if 'schedule_datetime' in schedule and isinstance(schedule['schedule_datetime'], datetime):
+            schedule['schedule_datetime'] = schedule['schedule_datetime'].strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            schedule['schedule_datetime'] = "2025-01-01 00:00:00"  # ערך ברירת מחדל
+        
+        if 'time_start' in schedule and isinstance(schedule['time_start'], time):
+            schedule['time_start'] = schedule['time_start'].strftime("%H:%M:%S")
+        else:
+            schedule['time_start'] = "08:00:00"  # ערך ברירת מחדל
+
+        if 'time_end' in schedule and isinstance(schedule['time_end'], time):
+            schedule['time_end'] = schedule['time_end'].strftime("%H:%M:%S")
+        else:
+            schedule['time_end'] = "10:00:00"  # ערך ברירת מחדל
+
+        if 'time_diff' in schedule and isinstance(schedule['time_diff'], timedelta):
+            schedule['time_diff'] = str(schedule['time_diff'])
+        else:
+            schedule['time_diff'] = "2:00:00"  # ערך ברירת מחדל
+
+        if 'status' not in schedule or not schedule['status']:
+            schedule['status'] = "Pending"  # ערך ברירת מחדל למצב
+
+    return jsonify({'schedules': schedules})
+
+
+# מסלול לעדכון שיבוץ
+@app.route('/update_schedule', methods=['POST'])
+def update_schedule():
+    schedule_id = request.form['schedule_id']
+    classroom_id = request.form['classroom_id']
+    course_id = request.form['course_id']
+    schedule_datetime = request.form['schedule_datetime']
+    status = request.form['status']
+    time_start = request.form['time_start']
+    time_end = request.form['time_end']
+
+    try:
+        cursor = db.cursor()
+        cursor.execute("""
+            UPDATE schedules
+            SET classroom_id = %s, course_id = %s, schedule_datetime = %s, status = %s, time_start = %s, time_end = %s
+            WHERE schedule_id = %s
+        """, (classroom_id, course_id, schedule_datetime, status, time_start, time_end, schedule_id))
+        db.commit()
+        cursor.close()
+        flash('Schedule updated successfully!')
+    except Exception as e:
+        flash(f'Error updating schedule: {e}')
+    return redirect(url_for('request_schedule'))
+
 
 if __name__ == '__main__':
     app.run(debug=True)
