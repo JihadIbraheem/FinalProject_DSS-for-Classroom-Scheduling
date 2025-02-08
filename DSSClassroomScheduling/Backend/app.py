@@ -27,7 +27,7 @@ db = mysql.connector.connect(
 # מסלול ברירת מחדל - עמוד הבית
 @app.route('/')
 def default_home():
-    return redirect(url_for('home'))
+    return redirect(url_for('login'))
 
 # פונקציה לבדיקה אם יש נתונים קיימים בטבלה
 def is_data_existing():
