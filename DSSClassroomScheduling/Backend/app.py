@@ -1,10 +1,11 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session
-from flask import jsonify
-
+from flask import jsonify, Response
 import os
 import pandas as pd
 import mysql.connector
 from datetime import datetime, time, timedelta
+from io import BytesIO
+from fpdf import FPDF
 
 
 app = Flask(__name__)
@@ -154,14 +155,52 @@ def request_schedule():
     return render_template('request_schedule.html')
 
 # מסלול ליצירת דוחות
+# עדיין לא פועל
 @app.route('/generate_reports', methods=['GET', 'POST'])
 def generate_reports():
     if request.method == 'POST':
-        report_type = request.form['report-type']
-        time_period = request.form['time-period']
+        classroom_id = request.form.get('classroom_id')
+        report_format = request.form.get('report_format')
 
-        flash(f'Report "{report_type}" for "{time_period}" generated successfully!')
-        return redirect(url_for('home'))
+        cursor = db.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM schedules WHERE classroom_id = %s", (classroom_id,))
+        schedules = cursor.fetchall()
+        cursor.close()
+
+        if not schedules:
+            flash('No schedules found for the selected classroom!')
+            return redirect(url_for('generate_reports'))
+
+        if report_format == 'pdf':
+            pdf = FPDF()
+            pdf.set_auto_page_break(auto=True, margin=15)
+            pdf.add_page()
+            pdf.set_font("Arial", size=12)
+
+            pdf.cell(200, 10, txt="Schedules Report", ln=True, align='C')
+
+            for schedule in schedules:
+                line = ", ".join([f"{key}: {value}" for key, value in schedule.items()])
+                pdf.multi_cell(0, 10, txt=line)
+
+            # שימוש באובייקט BytesIO
+            output = BytesIO()
+            pdf.output(output, 'F')  # שמירת הקובץ בזיכרון
+            output.seek(0)
+
+            return Response(output, mimetype="application/pdf",
+                            headers={"Content-Disposition": "attachment;filename=schedules_report.pdf"})
+
+        elif report_format == 'excel':
+            df = pd.DataFrame(schedules)
+            output = BytesIO()
+            writer = pd.ExcelWriter(output, engine='xlsxwriter')
+            df.to_excel(writer, index=False, sheet_name='Schedules')
+            writer.save()
+            output.seek(0)
+
+            return Response(output, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            headers={"Content-Disposition": "attachment;filename=schedules_report.xlsx"})
 
     return render_template('generate_reports.html')
 

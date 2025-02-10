@@ -22,6 +22,29 @@ header {
     top: 0;
 }
 
+.logout-button {
+    display: inline-block;
+    background-color: #ffffff; 
+    color: rgb(0, 0, 0); 
+    text-decoration: none; 
+    padding: 10px 20px; 
+    border-radius: 5px; 
+    font-size: 16px; 
+    font-weight: bold; 
+    transition: background-color 0.3s ease; 
+    margin-top: 20px; 
+}
+
+.logout-button:hover {
+    background-color: #002ae6; 
+    text-decoration: underline; 
+}
+
+.logout-button:active {
+    background-color: #cc0000; 
+}
+
+
 main {
     margin-top: 5em;
     padding: 2em;
@@ -74,11 +97,11 @@ footer {
 }
 
 .home-link {
-    color: white; /* צבע טקסט */
-    text-decoration: none; /* הסרת קו תחתון */
+    color: white; 
+    text-decoration: none; 
 }
 
 .home-link:hover {
-    text-decoration: underline; /* הוספת קו תחתון בעת ריחוף */
+    text-decoration: underline; 
 }
 
