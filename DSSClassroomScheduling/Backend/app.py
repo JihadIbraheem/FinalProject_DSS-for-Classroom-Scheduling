@@ -154,55 +154,32 @@ def request_schedule():
 
     return render_template('request_schedule.html')
 
-# מסלול ליצירת דוחות
-# עדיין לא פועל
-@app.route('/generate_reports', methods=['GET', 'POST'])
-def generate_reports():
+
+@app.route('/add_user', methods=['GET', 'POST'])
+def add_user():
     if request.method == 'POST':
-        classroom_id = request.form.get('classroom_id')
-        report_format = request.form.get('report_format')
+        first_name = request.form['first_name']
+        last_name = request.form['last_name']
+        email = request.form['email']
+        password = request.form['password']
+        role = request.form['role']
+        permissions = request.form['permissions']
 
-        cursor = db.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM schedules WHERE classroom_id = %s", (classroom_id,))
-        schedules = cursor.fetchall()
-        cursor.close()
+        try:
+            cursor = db.cursor()
+            cursor.execute("""
+                INSERT INTO users (first_name, last_name, email, password, role, permissions)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (first_name, last_name, email, password, role, permissions))
+            db.commit()
+            cursor.close()
+            flash('User added successfully!')
+        except Exception as e:
+            flash(f'Error adding user: {e}')
+        return redirect(url_for('home'))
+    
+    return render_template('add_user.html')
 
-        if not schedules:
-            flash('No schedules found for the selected classroom!')
-            return redirect(url_for('generate_reports'))
-
-        if report_format == 'pdf':
-            pdf = FPDF()
-            pdf.set_auto_page_break(auto=True, margin=15)
-            pdf.add_page()
-            pdf.set_font("Arial", size=12)
-
-            pdf.cell(200, 10, txt="Schedules Report", ln=True, align='C')
-
-            for schedule in schedules:
-                line = ", ".join([f"{key}: {value}" for key, value in schedule.items()])
-                pdf.multi_cell(0, 10, txt=line)
-
-            # שימוש באובייקט BytesIO
-            output = BytesIO()
-            pdf.output(output, 'F')  # שמירת הקובץ בזיכרון
-            output.seek(0)
-
-            return Response(output, mimetype="application/pdf",
-                            headers={"Content-Disposition": "attachment;filename=schedules_report.pdf"})
-
-        elif report_format == 'excel':
-            df = pd.DataFrame(schedules)
-            output = BytesIO()
-            writer = pd.ExcelWriter(output, engine='xlsxwriter')
-            df.to_excel(writer, index=False, sheet_name='Schedules')
-            writer.save()
-            output.seek(0)
-
-            return Response(output, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            headers={"Content-Disposition": "attachment;filename=schedules_report.xlsx"})
-
-    return render_template('generate_reports.html')
 
 # מסלול להתנתקות
 @app.route('/logout')

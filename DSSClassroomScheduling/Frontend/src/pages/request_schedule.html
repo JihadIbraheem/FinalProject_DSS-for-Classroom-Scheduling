@@ -49,16 +49,17 @@
         <script>
             // Fetch schedules to populate the dropdown
             fetch('/get_schedules')
-                .then(response => response.json())
-                .then(data => {
-                    const scheduleSelect = document.getElementById('schedule-id');
-                    data.schedules.forEach(schedule => {
-                        const option = document.createElement('option');
-                        option.value = schedule.schedule_id;
-                        option.textContent = `Schedule ID: ${schedule.schedule_id} - ${schedule.status}`;
-                        scheduleSelect.appendChild(option);
-                    });
-                });
+    .then(response => response.json())
+    .then(data => {
+        const scheduleSelect = document.getElementById('schedule-id');
+        data.schedules.forEach(schedule => {
+            const option = document.createElement('option');
+            option.value = schedule.schedule_id;
+            option.textContent = `Schedule ID: ${schedule.schedule_id} - Classroom: ${schedule.classroom_id} - Course: ${schedule.course_id}`;
+            scheduleSelect.appendChild(option);
+        });
+    });
+
         
             // Fetch details of the selected schedule
             function fetchScheduleDetails(scheduleId) {
