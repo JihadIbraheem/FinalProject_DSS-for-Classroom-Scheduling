@@ -3,20 +3,17 @@ from flask import jsonify, Response
 import os
 import pandas as pd
 import mysql.connector
-from datetime import datetime, time, timedelta
-from io import BytesIO
-from fpdf import FPDF
-
+from datetime import time
+from datetime import datetime
+import re
 
 app = Flask(__name__)
 
-# הגדרת מיקום התבניות והסטטי בפרויקט
 app.template_folder = '../Frontend/src/pages'
 app.static_folder = '../Frontend/src'
 
 app.secret_key = 'your_secret_key'
 
-# חיבור למסד הנתונים
 db = mysql.connector.connect(
     host="localhost",
     port=3307,
@@ -25,12 +22,10 @@ db = mysql.connector.connect(
     database="classroom_scheduling"
 )
 
-# מסלול ברירת מחדל - עמוד הבית
 @app.route('/')
 def default_home():
     return redirect(url_for('login'))
 
-# פונקציה לבדיקה אם יש נתונים קיימים בטבלה
 def is_data_existing():
     cursor = db.cursor()
     cursor.execute("SELECT COUNT(*) FROM schedules")
@@ -38,46 +33,160 @@ def is_data_existing():
     cursor.close()
     return result > 0
 
-# פונקציה למחיקת כל הנתונים הקיימים בטבלה
 def delete_existing_data():
     cursor = db.cursor()
     cursor.execute("DELETE FROM schedules")
+    cursor.execute("DELETE FROM courses")
     db.commit()
     cursor.close()
 
-# פונקציה לקריאת ועיבוד קובץ
+
+def extract_course_id(text):
+    match = re.search(r'\d{4}-\d{2}', text)
+    return match.group(0) if match else '0000-00'
+
+def extract_course_details(text):
+    match = re.search(r"(?P<course_id>.*?)\(\s*(?P<students_num>\d+)\)\[(?P<lecturer_name>.*?)\]\{(?P<course_name>.*?)\}", str(text))
+    if match:
+        data = match.groupdict()
+        # הסר את היום בשבוע והמקף (למשל "א-")
+        if data['course_id'].startswith(('א-', 'ב-', 'ג-', 'ד-', 'ה-', 'ו-', 'ש-')):
+            data['course_id'] = data['course_id'][2:]  # הסר את שני התווים הראשונים
+        return data
+    return None
+
+
 def process_file(file):
-    data = pd.read_excel(file)
-    required_columns = {'classroom_id', 'course_id', 'date', 'status', 'start_time', 'end_time'}
+    df = pd.read_excel(file)
+    df.columns = df.columns.map(lambda x: str(x).strip())
 
-    if not required_columns.issubset(data.columns):
-        raise ValueError("Invalid file format. Missing required columns.")
+    required_columns = {'יום', 'חדר', 'בניין', 'קיבולת'}
+    if not required_columns.issubset(set(df.columns)):
+        raise ValueError(f"Invalid file format. Found columns: {list(df.columns)}. Expected: {list(required_columns)} and hourly slots")
 
-    # עיבוד הקובץ אם נדרש
-    data['date'] = pd.to_datetime(data['date'], errors='coerce')
-    data.dropna(inplace=True)  # מחיקת שורות עם נתונים חסרים
-    return data
+    time_slots = [col for col in df.columns if col not in required_columns]
+    schedule_rows = []
+    course_rows = []
+
+    for _, row in df.iterrows():
+        weekday = row['יום']
+        classroom_id = str(row['חדר']).strip()
+
+        for slot in time_slots:
+            course_info = str(row[slot]).strip()
+            if pd.notna(course_info) and course_info != '':
+                try:
+                    start_time, end_time = slot.split('-')
+                except ValueError:
+                    continue
+
+                # שליפת כל פרטי הקורס
+                course_data = extract_course_details(course_info)
+                if not course_data:
+                    continue
+
+                # ל-schedules
+                schedule_rows.append({
+                    'classroom_id': classroom_id,
+                    'course_id': course_data['course_id'],
+                    'weekday': weekday,
+                    'status': 'Confirmed',
+                    'time_start': start_time + ':00',
+                    'time_end': end_time + ':00'
+                })
+
+                # ל-courses
+                course_rows.append(course_data)
+
+    # הפוך ל-DataFrame
+    schedule_df = pd.DataFrame(schedule_rows)
+    courses_df = pd.DataFrame(course_rows).drop_duplicates(subset='course_id')
+    courses_df["students_num"] = courses_df["students_num"].astype(int)
+
+    return schedule_df, courses_df
 
 
-# פונקציה להוספת נתונים חדשים לטבלת schedules
+
+
 def insert_data_to_db(data):
     cursor = db.cursor()
-    for _, row in data.iterrows():
-        cursor.execute("""
-            INSERT INTO schedules (classroom_id, course_id, schedule_datetime, status, time_start, time_end)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        """, (
-            int(row['classroom_id']),
-            int(row['course_id']),
-            row['date'].strftime("%Y-%m-%d"),
-            row['status'],
-            row['start_time'],
-            row['end_time']
-        ))
+    failed_rows = []
+
+    for idx, row in data.iterrows():
+        # חיפוש classroom_id לפי classroom_num
+        try:
+            classroom_number = str(row['classroom_id']).strip()
+            cursor.execute("SELECT classroom_id FROM classrooms WHERE classroom_num = %s", (classroom_number,))
+            result = cursor.fetchone()
+            if result:
+                classroom_id = result[0]
+            else:
+                failed_rows.append((idx + 1, f"Classroom number '{classroom_number}' not found in database."))
+                continue
+        except Exception as e:
+            failed_rows.append((idx + 1, f"Error fetching classroom_id: {e}"))
+            continue
+
+        # שמירה של course_id כמות שהוא
+        course_id = row['course_id']
+
+
+        # עיבוד זמנים
+        try:
+            time_start_cleaned = row['time_start'].replace(' ', '')
+            time_end_cleaned = row['time_end'].replace(' ', '')
+            time_start = datetime.strptime(time_start_cleaned, "%H:%M:%S").time()
+            time_end = datetime.strptime(time_end_cleaned, "%H:%M:%S").time()
+        except Exception as e:
+            failed_rows.append((idx + 1, f"Invalid time format: {e}"))
+            continue
+
+        # הכנסת הנתונים לטבלה schedules
+        try:
+            cursor.execute("""
+                           INSERT INTO schedules (classroom_id, course_id, weekday, time_start, time_end)
+                           VALUES (%s, %s, %s, %s, %s)
+                           """, (
+                               classroom_id,
+                               course_id,
+                               row['weekday'],
+                               time_start,
+                               time_end
+                               ))
+        except Exception as e:
+            failed_rows.append((idx + 1, str(e)))
+
+    print(f"Rows prepared for insert: {len(data)}")
+    print(f"Total inserted: {len(data) - len(failed_rows)}")
+    print(f"Failed rows: {failed_rows}")
     db.commit()
     cursor.close()
 
-# מסלול להעלאת קובץ
+    if failed_rows:
+        message = f"{len(failed_rows)} rows failed to insert. Check terminal for details."
+        raise Exception(message)
+
+def insert_courses_to_db(courses_df):
+    cursor = db.cursor()
+    for _, row in courses_df.iterrows():
+        try:
+            cursor.execute("""
+                INSERT INTO courses (course_id, course_name, students_num, lecturer_name)
+                VALUES (%s, %s, %s, %s)
+            """, (
+                row['course_id'],
+                row['course_name'],
+                row['students_num'],
+                row['lecturer_name']
+            ))
+        except Exception as e:
+            print(f"Failed to insert course {row['course_id']}: {e}")
+            continue
+    db.commit()
+    cursor.close()
+
+
+
 @app.route('/upload', methods=['GET', 'POST'])
 def upload():
     if request.method == 'POST':
@@ -91,8 +200,10 @@ def upload():
             return redirect(url_for('upload'))
 
         try:
-            data = process_file(file)
-            insert_data_to_db(data)
+            schedule_data, course_data = process_file(file)
+            insert_courses_to_db(course_data)
+            insert_data_to_db(schedule_data)
+
             flash('File uploaded and data inserted successfully!')
             return redirect(url_for('home'))
         except Exception as e:
@@ -101,7 +212,6 @@ def upload():
 
     return render_template('upload.html')
 
-# מסלול למחיקת נתונים קיימים
 @app.route('/delete_data', methods=['POST'])
 def delete_data():
     if not is_data_existing():
@@ -112,12 +222,10 @@ def delete_data():
     flash('Existing data deleted successfully!')
     return redirect(url_for('upload'))
 
-# מסלול לדף הבית
 @app.route('/home')
 def home():
     return render_template('home.html')
 
-# מסלול לדף התחברות
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -139,7 +247,6 @@ def login():
 
     return render_template('login.html')
 
-# מסלול לבקשת מערכת שעות
 @app.route('/request_schedule', methods=['GET', 'POST'])
 def request_schedule():
     if request.method == 'POST':
@@ -153,7 +260,6 @@ def request_schedule():
         return redirect(url_for('home'))
 
     return render_template('request_schedule.html')
-
 
 @app.route('/add_user', methods=['GET', 'POST'])
 def add_user():
@@ -180,75 +286,11 @@ def add_user():
     
     return render_template('add_user.html')
 
-
-# מסלול להתנתקות
 @app.route('/logout')
 def logout():
     session.clear()
     flash('Logged out successfully!')
     return redirect(url_for('login'))
-
-# מסלול להצגת שיבוצים קיימים
-@app.route('/get_schedules', methods=['GET'])
-def get_schedules():
-    cursor = db.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM schedules")
-    schedules = cursor.fetchall()
-    cursor.close()
-
-    # המרה של datetime, time, timedelta למחרוזות והוספת ערכים קבועים ברירת מחדל
-    for schedule in schedules:
-        if 'schedule_datetime' in schedule and isinstance(schedule['schedule_datetime'], datetime):
-            schedule['schedule_datetime'] = schedule['schedule_datetime'].strftime("%Y-%m-%d %H:%M:%S")
-        else:
-            schedule['schedule_datetime'] = "2025-01-01 00:00:00"  # ערך ברירת מחדל
-        
-        if 'time_start' in schedule and isinstance(schedule['time_start'], time):
-            schedule['time_start'] = schedule['time_start'].strftime("%H:%M:%S")
-        else:
-            schedule['time_start'] = "08:00:00"  # ערך ברירת מחדל
-
-        if 'time_end' in schedule and isinstance(schedule['time_end'], time):
-            schedule['time_end'] = schedule['time_end'].strftime("%H:%M:%S")
-        else:
-            schedule['time_end'] = "10:00:00"  # ערך ברירת מחדל
-
-        if 'time_diff' in schedule and isinstance(schedule['time_diff'], timedelta):
-            schedule['time_diff'] = str(schedule['time_diff'])
-        else:
-            schedule['time_diff'] = "2:00:00"  # ערך ברירת מחדל
-
-        if 'status' not in schedule or not schedule['status']:
-            schedule['status'] = "Pending"  # ערך ברירת מחדל למצב
-
-    return jsonify({'schedules': schedules})
-
-
-# מסלול לעדכון שיבוץ
-@app.route('/update_schedule', methods=['POST'])
-def update_schedule():
-    schedule_id = request.form['schedule_id']
-    classroom_id = request.form['classroom_id']
-    course_id = request.form['course_id']
-    schedule_datetime = request.form['schedule_datetime']
-    status = request.form['status']
-    time_start = request.form['time_start']
-    time_end = request.form['time_end']
-
-    try:
-        cursor = db.cursor()
-        cursor.execute("""
-            UPDATE schedules
-            SET classroom_id = %s, course_id = %s, schedule_datetime = %s, status = %s, time_start = %s, time_end = %s
-            WHERE schedule_id = %s
-        """, (classroom_id, course_id, schedule_datetime, status, time_start, time_end, schedule_id))
-        db.commit()
-        cursor.close()
-        flash('Schedule updated successfully!')
-    except Exception as e:
-        flash(f'Error updating schedule: {e}')
-    return redirect(url_for('request_schedule'))
-
 
 if __name__ == '__main__':
     app.run(debug=True)

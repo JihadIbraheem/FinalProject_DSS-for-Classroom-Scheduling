@@ -19,9 +19,9 @@
             <input type="file" id="file" name="file" accept=".xls,.xlsx" required>
             <button type="submit">Upload</button>
         </form>
-        <form action="/delete_data" method="POST" style="margin-top: 20px;">
+        <form action="/delete_data" method="POST" style="margin-top: 20px;" onsubmit="return confirm('Are you sure you want to delete the existing scheduling data from the database?');">
             <button type="submit" style="background-color: red; color: white;">Delete Existing Data</button>
-        </form>
+        </form>        
         {% with messages = get_flashed_messages() %}
         {% if messages %}
         <ul>
