@@ -65,25 +65,107 @@
       }
     }
 
+    function editRow(schedule_id) {
+  const row = [...document.querySelectorAll('#schedule-table-body tr')].find(r => {
+    return r.querySelector('button')?.outerHTML.includes(`editRow(${schedule_id})`);
+  });
+
+  if (!row) return;
+
+  const cells = row.querySelectorAll('td');
+
+  const currentWeekday = cells[5].textContent;
+  const currentStart = cells[6].textContent;
+  const currentEnd = cells[7].textContent;
+
+  // Dropdown ל־weekday
+  cells[5].innerHTML = `
+    <select id="weekday-${schedule_id}">
+      <option value="א'" ${currentWeekday === "א'" ? 'selected' : ''}>א</option>
+      <option value="ב'" ${currentWeekday === "ב'" ? 'selected' : ''}>ב</option>
+      <option value="ג'" ${currentWeekday === "ג'" ? 'selected' : ''}>ג</option>
+      <option value="ד'" ${currentWeekday === "ד'" ? 'selected' : ''}>ד</option>
+      <option value="ה'" ${currentWeekday === "ה'" ? 'selected' : ''}>ה</option>
+      <option value="ו'" ${currentWeekday === "ו'" ? 'selected' : ''}>ו</option>
+    </select>`;
+
+  // time inputs
+  cells[6].innerHTML = `<input type="time" id="start-${schedule_id}" value="${currentStart}">`;
+  cells[7].innerHTML = `<input type="time" id="end-${schedule_id}" value="${currentEnd}">`;
+
+  // החלף כפתור Save
+  cells[9].innerHTML = `<button onclick="submitEdit(${schedule_id})">Save</button>`;
+}
+
+async function submitEdit(schedule_id) {
+  const row = [...document.querySelectorAll('#schedule-table-body tr')].find(r => {
+    return r.querySelector('button')?.outerHTML.includes(`submitEdit(${schedule_id})`);
+  });
+
+  const weekday = document.getElementById(`weekday-${schedule_id}`).value;
+  const time_start = document.getElementById(`start-${schedule_id}`).value;
+  const time_end = document.getElementById(`end-${schedule_id}`).value;
+  const classroom = row.querySelectorAll('td')[0].textContent;
+  const lecturer = row.querySelectorAll('td')[4].textContent;
+
+  const data = {
+    schedule_id,
+    weekday,
+    time_start,
+    time_end,
+    classroom_num: classroom,
+    lecturer_name: lecturer
+  };
+
+  const res = await fetch('/api/update_schedule_fields', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+
+  const result = await res.json();
+
+  if (result.success) {
+    alert('Schedule updated successfully!');
+    loadSchedules();
+  } else {
+    alert(`Update failed: ${result.message}`);
+  }
+}
+
+
     function filterSchedules() {
-      const searchValue = document.getElementById('course-search').value.toLowerCase();
-      const showAll = document.getElementById('show-all').checked;
-      const table = document.getElementById('schedule-table-body');
+   const courseIdValue = document.getElementById('course-search').value.toLowerCase();
+   const courseNameValue = document.getElementById('course-name-search')?.value.toLowerCase() || '';
+   const lecturerValue = document.getElementById('lecturer-search')?.value.toLowerCase() || '';
+   const weekdaysSelected = Array.from(document.getElementById('weekday-filter')?.selectedOptions || []).map(opt => opt.value);
+   const buildingsSelected = Array.from(document.getElementById('building-filter')?.selectedOptions || []).map(opt => opt.value);
+   const showAll = document.getElementById('show-all').checked;
+   const table = document.getElementById('schedule-table-body');
 
-     if (showAll && !loaded) {
-     loadSchedules();  // טוען את הכול ומפעיל סינון מתחת
-     return;
-      }
+   if (showAll && !loaded) {
+    loadSchedules();
+    return;
+   }
 
-      const rows = table.querySelectorAll('tr');
-      rows.forEach(row => {
-        const courseCell = row.querySelectorAll('td')[2];
-        if (courseCell) {
-          const courseId = courseCell.textContent.toLowerCase();
-          row.style.display = courseId.includes(searchValue) ? '' : 'none';
-        }
-     });
-    }
+   const rows = table.querySelectorAll('tr');
+   rows.forEach(row => {
+    const courseId = row.querySelectorAll('td')[2].textContent.toLowerCase();
+    const courseName = row.querySelectorAll('td')[3].textContent.toLowerCase();
+    const lecturer = row.querySelectorAll('td')[4].textContent.toLowerCase();
+    const weekday = row.querySelectorAll('td')[5].textContent;
+    const building = row.querySelectorAll('td')[1].textContent;
+
+    const matchCourseId = courseId.includes(courseIdValue);
+    const matchCourseName = courseNameValue.split(' ').some(word => courseName.includes(word));
+    const matchLecturer = lecturerValue.split(' ').some(word => lecturer.includes(word));
+    const matchWeekday = weekdaysSelected.length === 0 || weekdaysSelected.includes(weekday);
+    const matchBuilding = buildingsSelected.length === 0 || buildingsSelected.includes(building);
+
+    row.style.display = (matchCourseId && matchCourseName && matchLecturer && matchWeekday && matchBuilding) ? '' : 'none';
+   });
+  }
+
   
     window.onload = () => {
   document.getElementById('show-all').checked = false;
@@ -103,6 +185,33 @@
     <h2>Editable Schedule Table</h2>
     <label for="course-search">Search by Course ID:</label>
     <input type="text" id="course-search" placeholder="Enter course ID..." oninput="filterSchedules()" style="margin-bottom: 10px;">
+
+    <label for="course-name-search">Course Name:</label>
+    <input type="text" id="course-name-search" oninput="filterSchedules()">
+    
+    <label for="lecturer-search">Lecturer name:</label>
+    <input type="text" id="lecturer-search" oninput="filterSchedules()">
+    <br>
+    
+    <label for="weekday-filter">Filter by Weekday:</label>
+    <select id="weekday-filter" multiple onchange="filterSchedules()">
+      <option value="א'">א</option>
+      <option value="ב'">ב</option>
+      <option value="ג'">ג</option>
+      <option value="ד'">ד</option>
+      <option value="ה'">ה</option>
+      <option value="ו'">ו</option>
+    </select>
+    
+    <label for="building-filter">Filter by Building:</label>
+    <select id="building-filter" multiple onchange="filterSchedules()">
+      <option value="פורטאון">פורטאון</option>
+      <option value="הכשרת היישוב">הכשרת היישוב</option>
+      <option value="אולפן עציון">אולפן עציון</option>
+      <option value="בניין דילן טאובר">בניין דילן טאובר</option>
+      <option value="בניין עמיר">בניין עמיר</option>
+    </select>
+
     <br>
     <label><input type="checkbox" id="show-all" onchange="filterSchedules()"> Show all schedules</label>
 

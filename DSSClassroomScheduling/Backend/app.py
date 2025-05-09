@@ -287,6 +287,78 @@ def add_user():
     
     return render_template('add_user.html')
 
+@app.route('/api/update_schedule_fields', methods=['POST'])
+def update_schedule_fields():
+    data = request.get_json()
+    schedule_id = data['schedule_id']
+    weekday = data['weekday']
+    time_start = data['time_start']
+    time_end = data['time_end']
+    lecturer_name = data['lecturer_name']
+    classroom_num = data['classroom_num']
+
+    cursor = db.cursor(dictionary=True)
+
+    # שליפת classroom_id
+    cursor.execute("SELECT classroom_id FROM classrooms WHERE classroom_num = %s", (classroom_num,))
+    classroom = cursor.fetchone()
+    if not classroom:
+        return jsonify(success=False, message="Classroom not found")
+    classroom_id = classroom['classroom_id']
+
+    # שליפת course_id כדי לזהות את המרצה
+    cursor.execute("SELECT course_id FROM schedules WHERE schedule_id = %s", (schedule_id,))
+    course = cursor.fetchone()
+    if not course:
+        return jsonify(success=False, message="Course not found")
+    course_id = course['course_id']
+
+    # בדיקה של התנגשות בכיתה
+    cursor.execute("""
+        SELECT * FROM schedules
+        WHERE schedule_id != %s
+          AND classroom_id = %s
+          AND weekday = %s
+          AND (
+            (time_start <= %s AND time_end > %s) OR
+            (time_start < %s AND time_end >= %s) OR
+            (time_start >= %s AND time_end <= %s)
+          )
+    """, (schedule_id, classroom_id, weekday,
+          time_start, time_start, time_end, time_end, time_start, time_end))
+    room_conflict = cursor.fetchone()
+    if room_conflict:
+        return jsonify(success=False, message="Time conflict in the same classroom")
+
+    # בדיקה של התנגשות למרצה
+    cursor.execute("""
+        SELECT s.* FROM schedules s
+        JOIN courses c ON s.course_id = c.course_id
+        WHERE s.schedule_id != %s
+          AND c.lecturer_name = %s
+          AND s.weekday = %s
+          AND (
+            (s.time_start <= %s AND s.time_end > %s) OR
+            (s.time_start < %s AND s.time_end >= %s) OR
+            (s.time_start >= %s AND s.time_end <= %s)
+          )
+    """, (schedule_id, lecturer_name, weekday,
+          time_start, time_start, time_end, time_end, time_start, time_end))
+    lecturer_conflict = cursor.fetchone()
+    if lecturer_conflict:
+        return jsonify(success=False, message="Lecturer has another class at that time")
+
+    # עדכון בפועל
+    cursor.execute("""
+        UPDATE schedules
+        SET weekday = %s, time_start = %s, time_end = %s
+        WHERE schedule_id = %s
+    """, (weekday, time_start, time_end, schedule_id))
+    db.commit()
+    cursor.close()
+
+    return jsonify(success=True)
+
 
 @app.route('/api/schedules')
 def api_schedules():
