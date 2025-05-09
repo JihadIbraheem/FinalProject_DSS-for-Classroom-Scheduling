@@ -6,6 +6,7 @@ import mysql.connector
 from datetime import time
 from datetime import datetime
 import re
+from datetime import date,  timedelta
 
 app = Flask(__name__)
 
@@ -285,6 +286,110 @@ def add_user():
         return redirect(url_for('home'))
     
     return render_template('add_user.html')
+
+
+@app.route('/api/schedules')
+def api_schedules():
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("""
+    SELECT 
+        s.schedule_id,
+        c.classroom_num,
+        b.building_name,
+        s.course_id,
+        cr.course_name,
+        cr.lecturer_name,
+        s.weekday,
+        s.time_start,
+        s.time_end,
+        s.status
+    FROM schedules s
+    JOIN classrooms c ON s.classroom_id = c.classroom_id
+    JOIN buildings b ON c.building_id = b.building_id
+    JOIN courses cr ON s.course_id = cr.course_id
+                   """)
+
+    rows = cursor.fetchall()
+    cursor.close()
+
+    for row in rows:
+        for key in row:
+            val = row[key]
+            if isinstance(val, (datetime, date)):
+                row[key] = val.isoformat()
+            elif isinstance(val, time):
+                row[key] = val.strftime("%H:%M")
+            elif isinstance(val, timedelta):
+                row[key] = str(val)  # המרה של timedelta למחרוזת
+            elif val is None:
+                row[key] = ""
+
+    return jsonify(schedules=rows)
+
+
+
+@app.route('/interactive_schedule')
+def interactive_schedule():
+    return render_template('interactive_schedule.html')
+
+
+@app.route('/update_schedule', methods=['POST'])
+def update_schedule():
+    try:
+        schedule_id = request.form['schedule_id']
+        classroom_id = request.form['classroom_id']
+        course_id = request.form['course_id']
+        schedule_datetime = request.form['schedule_datetime']
+        status = request.form['status']
+        time_start = request.form['time_start']
+        time_end = request.form['time_end']
+
+        # בדיקת התנגשויות - האם יש כבר שיעור באותה כיתה ובאותו זמן
+        cursor = db.cursor(dictionary=True)
+        conflict_query = '''
+            SELECT * FROM schedules
+            WHERE classroom_id = %s
+              AND schedule_id != %s
+              AND schedule_datetime = %s
+              AND (
+                    (time_start <= %s AND time_end > %s) OR
+                    (time_start < %s AND time_end >= %s) OR
+                    (time_start >= %s AND time_end <= %s)
+              )
+        '''
+        cursor.execute(conflict_query, (
+            classroom_id, schedule_id, schedule_datetime,
+            time_start, time_start,
+            time_end, time_end,
+            time_start, time_end
+        ))
+        conflict = cursor.fetchone()
+
+        if conflict:
+            flash("Conflict detected: Room is already booked during that time.")
+            return redirect(url_for('request_schedule'))
+
+        # עדכון בטבלת schedules
+        update_query = '''
+            UPDATE schedules
+            SET classroom_id = %s, course_id = %s, schedule_datetime = %s,
+                status = %s, time_start = %s, time_end = %s, updated_at = NOW()
+            WHERE schedule_id = %s
+        '''
+        cursor.execute(update_query, (
+            classroom_id, course_id, schedule_datetime,
+            status, time_start, time_end, schedule_id
+        ))
+        db.commit()
+        cursor.close()
+
+        flash("Schedule updated successfully.")
+        return redirect(url_for('request_schedule'))
+
+    except Exception as e:
+        flash(f"Error updating schedule: {str(e)}")
+        return redirect(url_for('request_schedule'))
+
 
 @app.route('/logout')
 def logout():

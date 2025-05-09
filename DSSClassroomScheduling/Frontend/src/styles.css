@@ -22,6 +22,16 @@ header {
     top: 0;
 }
 
+.scrollable-table {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid #ccc;
+    margin-top: 15px;
+    width: 100%;
+    overflow-x: auto;
+    
+}
+
 .logout-button {
     display: inline-block;
     background-color: #ffffff; 
@@ -54,6 +64,8 @@ main {
     max-width: 600px;
     width: 90%;
     text-align: center;
+    max-width: 1000px;
+
 }
 
 form {
@@ -105,3 +117,8 @@ footer {
     text-decoration: underline; 
 }
 
+footer p {
+    font-size: 0.8em;
+    color: #ffffff;
+    margin-top: 0.1em;
+}

@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Interactive Schedule</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script>
+    let loaded = false;
+    async function loadSchedules() {
+      const res = await fetch('/api/schedules');
+      const json = await res.json();
+      const data = json.schedules || json;  // תמיכה בשתי אפשרויות
+      const table = document.getElementById('schedule-table-body');
+      table.innerHTML = '';
+
+      data.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+        <td>${row.classroom_num}</td>
+        <td>${row.building_name}</td>
+        <td>${row.course_id}</td>
+        <td>${row.course_name}</td>
+        <td>${row.lecturer_name}</td>
+        <td>${row.weekday}</td>
+        <td>${row.time_start}</td>
+        <td>${row.time_end}</td>
+        <td>${row.status}</td>
+        <td><button onclick="editRow(${row.schedule_id})">Edit</button></td>
+        `;
+
+        table.appendChild(tr);
+      });
+      loaded = true;
+      filterSchedules();
+    }
+
+    function markEdited(input) {
+      input.style.border = '2px solid orange';
+    }
+
+    async function saveRow(button, id) {
+      const row = button.parentElement.parentElement;
+      const inputs = row.querySelectorAll('input, select');
+      const data = {
+        schedule_id: id,
+        classroom_id: inputs[0].value,
+        course_id: inputs[1].value,
+        schedule_datetime: inputs[2].value,
+        time_start: inputs[3].value,
+        time_end: inputs[4].value,
+        status: inputs[5].value
+      };
+
+      const res = await fetch('/update_schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(data)
+      });
+
+      if (res.ok) {
+        alert('Schedule updated successfully');
+        loadSchedules();
+      } else {
+        alert('Error updating schedule');
+      }
+    }
+
+    function filterSchedules() {
+      const searchValue = document.getElementById('course-search').value.toLowerCase();
+      const showAll = document.getElementById('show-all').checked;
+      const table = document.getElementById('schedule-table-body');
+
+     if (showAll && !loaded) {
+     loadSchedules();  // טוען את הכול ומפעיל סינון מתחת
+     return;
+      }
+
+      const rows = table.querySelectorAll('tr');
+      rows.forEach(row => {
+        const courseCell = row.querySelectorAll('td')[2];
+        if (courseCell) {
+          const courseId = courseCell.textContent.toLowerCase();
+          row.style.display = courseId.includes(searchValue) ? '' : 'none';
+        }
+     });
+    }
+  
+    window.onload = () => {
+  document.getElementById('show-all').checked = false;
+  document.getElementById('course-search').value = '';
+ };
+
+  </script>
+</head>
+<body>
+  <header>
+    <h1>
+      <a href="/home" class="home-link">Classroom Scheduling System</a>
+    </h1>
+  </header>
+
+  <main>
+    <h2>Editable Schedule Table</h2>
+    <label for="course-search">Search by Course ID:</label>
+    <input type="text" id="course-search" placeholder="Enter course ID..." oninput="filterSchedules()" style="margin-bottom: 10px;">
+    <br>
+    <label><input type="checkbox" id="show-all" onchange="filterSchedules()"> Show all schedules</label>
+
+    <div class="scrollable-table">
+      <table border="1" width="100%" style="border-collapse: collapse;">
+        <thead>
+          <tr>
+            <th>Classroom</th>
+            <th>Building</th>
+            <th>Course ID</th>
+            <th>Course Name</th>
+            <th>Lecturer</th>
+            <th>Weekday</th>
+            <th>Start</th>
+            <th>End</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="schedule-table-body"></tbody>
+      </table>
+    </div>
+    
+  </main>
+
+  <footer>
+    <p>&copy; 2025 Classroom Scheduling System</p>
+  </footer>
+</body>
+</html>
