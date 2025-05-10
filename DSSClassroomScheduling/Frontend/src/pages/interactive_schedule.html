@@ -134,16 +134,20 @@ async function submitEdit(schedule_id) {
 }
 
 
-    function filterSchedules() {
+   function filterSchedules() {
    const courseIdValue = document.getElementById('course-search').value.toLowerCase();
    const courseNameValue = document.getElementById('course-name-search')?.value.toLowerCase() || '';
    const lecturerValue = document.getElementById('lecturer-search')?.value.toLowerCase() || '';
-   const weekdaysSelected = Array.from(document.getElementById('weekday-filter')?.selectedOptions || []).map(opt => opt.value);
-   const buildingsSelected = Array.from(document.getElementById('building-filter')?.selectedOptions || []).map(opt => opt.value);
-   const showAll = document.getElementById('show-all').checked;
+  
+   const weekdayFilter = document.getElementById('weekday-filter').value;
+  
+   const buildingsSelected = Array.from(document.getElementById('building-filter')?.selectedOptions || [])
+    .map(opt => opt.value)
+    .filter(val => val !== "");
+
    const table = document.getElementById('schedule-table-body');
 
-   if (showAll && !loaded) {
+   if (!loaded) {
     loadSchedules();
     return;
    }
@@ -159,18 +163,20 @@ async function submitEdit(schedule_id) {
     const matchCourseId = courseId.includes(courseIdValue);
     const matchCourseName = courseNameValue.split(' ').some(word => courseName.includes(word));
     const matchLecturer = lecturerValue.split(' ').some(word => lecturer.includes(word));
-    const matchWeekday = weekdaysSelected.length === 0 || weekdaysSelected.includes(weekday);
+    const matchWeekday = !weekdayFilter || weekday === weekdayFilter;
     const matchBuilding = buildingsSelected.length === 0 || buildingsSelected.includes(building);
 
     row.style.display = (matchCourseId && matchCourseName && matchLecturer && matchWeekday && matchBuilding) ? '' : 'none';
    });
-  }
+   }
+
 
   
     window.onload = () => {
-  document.getElementById('show-all').checked = false;
-  document.getElementById('course-search').value = '';
- };
+   document.getElementById('course-search').value = '';
+   loadSchedules(); // טען את הטבלה בעת טעינת העמוד
+   };
+
 
   </script>
 </head>
@@ -194,17 +200,20 @@ async function submitEdit(schedule_id) {
     <br>
     
     <label for="weekday-filter">Filter by Weekday:</label>
-    <select id="weekday-filter" multiple onchange="filterSchedules()">
+    <select id="weekday-filter" onchange="filterSchedules()">
+      <option value="">כל הימים</option>
       <option value="א'">א</option>
       <option value="ב'">ב</option>
       <option value="ג'">ג</option>
       <option value="ד'">ד</option>
       <option value="ה'">ה</option>
       <option value="ו'">ו</option>
-    </select>
+     </select>
+
     
     <label for="building-filter">Filter by Building:</label>
-    <select id="building-filter" multiple onchange="filterSchedules()">
+    <select id="building-filter" onchange="filterSchedules()">
+      <option value="">כל הבניינים</option>
       <option value="פורטאון">פורטאון</option>
       <option value="הכשרת היישוב">הכשרת היישוב</option>
       <option value="אולפן עציון">אולפן עציון</option>
@@ -212,8 +221,6 @@ async function submitEdit(schedule_id) {
       <option value="בניין עמיר">בניין עמיר</option>
     </select>
 
-    <br>
-    <label><input type="checkbox" id="show-all" onchange="filterSchedules()"> Show all schedules</label>
 
     <div class="scrollable-table">
       <table border="1" width="100%" style="border-collapse: collapse;">

@@ -7,6 +7,7 @@ from datetime import time
 from datetime import datetime
 import re
 from datetime import date,  timedelta
+import re  # ודא שזה בתחילת הקובץ
 
 app = Flask(__name__)
 
@@ -103,10 +104,53 @@ def process_file(file):
     schedule_df = pd.DataFrame(schedule_rows)
     courses_df = pd.DataFrame(course_rows).drop_duplicates(subset='course_id')
     courses_df["students_num"] = courses_df["students_num"].astype(int)
+    
+    schedule_df = merge_continuous_schedules(schedule_df)
 
     return schedule_df, courses_df
 
 
+def merge_continuous_schedules(df):
+    df['time_start'] = df['time_start'].astype(str).apply(lambda x: re.sub(r'[^\d:]', '', x))
+    df['time_end'] = df['time_end'].astype(str).apply(lambda x: re.sub(r'[^\d:]', '', x))
+    df['time_start'] = pd.to_datetime(df['time_start'], format='%H:%M:%S')
+    df['time_end'] = pd.to_datetime(df['time_end'], format='%H:%M:%S')
+
+    df.sort_values(by=['course_id', 'weekday', 'classroom_id', 'time_start'], inplace=True)
+
+    merged = []
+    current = None
+
+    for row in df.itertuples():
+        if current is None:
+            current = row
+        elif (row.course_id == current.course_id and
+              row.weekday == current.weekday and
+              row.classroom_id == current.classroom_id and
+              row.time_start == current.time_end):
+            current = current._replace(time_end=row.time_end)
+        else:
+            merged.append({
+                'classroom_id': current.classroom_id,
+                'course_id': current.course_id,
+                'weekday': current.weekday,
+                'status': current.status,
+                'time_start': current.time_start.strftime('%H:%M:%S'),
+                'time_end': current.time_end.strftime('%H:%M:%S')
+            })
+            current = row
+
+    if current:
+        merged.append({
+            'classroom_id': current.classroom_id,
+            'course_id': current.course_id,
+            'weekday': current.weekday,
+            'status': current.status,
+            'time_start': current.time_start.strftime('%H:%M:%S'),
+            'time_end': current.time_end.strftime('%H:%M:%S')
+        })
+
+    return pd.DataFrame(merged)
 
 
 def insert_data_to_db(data):
@@ -134,8 +178,10 @@ def insert_data_to_db(data):
 
         # עיבוד זמנים
         try:
-            time_start_cleaned = row['time_start'].replace(' ', '')
-            time_end_cleaned = row['time_end'].replace(' ', '')
+            time_start_cleaned = re.sub(r'[^\d:]', '', str(row['time_start']))
+            time_end_cleaned = re.sub(r'[^\d:]', '', str(row['time_end']))
+
+
             time_start = datetime.strptime(time_start_cleaned, "%H:%M:%S").time()
             time_end = datetime.strptime(time_end_cleaned, "%H:%M:%S").time()
         except Exception as e:
@@ -461,7 +507,6 @@ def update_schedule():
     except Exception as e:
         flash(f"Error updating schedule: {str(e)}")
         return redirect(url_for('request_schedule'))
-
 
 @app.route('/logout')
 def logout():
