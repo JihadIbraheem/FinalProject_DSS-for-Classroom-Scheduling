@@ -64,37 +64,58 @@
       }
     }
 
-    function editRow(schedule_id) {
-  const row = [...document.querySelectorAll('#schedule-table-body tr')].find(r => {
-    return r.querySelector('button')?.outerHTML.includes(`editRow(${schedule_id})`);
-  });
-
-  if (!row) return;
+function editRow(schedule_id) {
+  const row = [...document.querySelectorAll('#schedule-table-body tr')].find(r =>
+    r.querySelector('button')?.outerHTML.includes(`editRow(${schedule_id})`)
+  );
 
   const cells = row.querySelectorAll('td');
 
-  const currentWeekday = cells[5].textContent;
-  const currentStart = cells[6].textContent;
-  const currentEnd = cells[7].textContent;
+  document.getElementById('modal-schedule-id').value = schedule_id;
+  document.getElementById('modal-classroom').value = cells[0].textContent;
+  document.getElementById('modal-lecturer').value = cells[4].textContent;
+  document.getElementById('modal-weekday').value = cells[5].textContent;
+  document.getElementById('modal-start').value = cells[6].textContent;
+  document.getElementById('modal-end').value = cells[7].textContent;
 
-  // Dropdown ל־weekday
-  cells[5].innerHTML = `
-    <select id="weekday-${schedule_id}">
-      <option value="א'" ${currentWeekday === "א'" ? 'selected' : ''}>א</option>
-      <option value="ב'" ${currentWeekday === "ב'" ? 'selected' : ''}>ב</option>
-      <option value="ג'" ${currentWeekday === "ג'" ? 'selected' : ''}>ג</option>
-      <option value="ד'" ${currentWeekday === "ד'" ? 'selected' : ''}>ד</option>
-      <option value="ה'" ${currentWeekday === "ה'" ? 'selected' : ''}>ה</option>
-      <option value="ו'" ${currentWeekday === "ו'" ? 'selected' : ''}>ו</option>
-    </select>`;
+  document.getElementById('editModal').style.display = 'block';
+}
 
-  // time inputs
-  cells[6].innerHTML = `<input type="time" id="start-${schedule_id}" value="${currentStart}">`;
-  cells[7].innerHTML = `<input type="time" id="end-${schedule_id}" value="${currentEnd}">`;
+function closeModal() {
+  document.getElementById('editModal').style.display = 'none';
+}
 
-  // החלף כפתור Save
-  cells[8].innerHTML = `<button onclick="submitEdit(${schedule_id})">Save</button>`;
+async function submitEditModal() {
+  const schedule_id = document.getElementById('modal-schedule-id').value;
+  const weekday = document.getElementById('modal-weekday').value;
+  const time_start = document.getElementById('modal-start').value;
+  const time_end = document.getElementById('modal-end').value;
+  const classroom = document.getElementById('modal-classroom').value;
+  const lecturer = document.getElementById('modal-lecturer').value;
 
+  const data = {
+    schedule_id,
+    weekday,
+    time_start,
+    time_end,
+    classroom_num: classroom,
+    lecturer_name: lecturer
+  };
+
+  const res = await fetch('/api/update_schedule_fields', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+
+  const result = await res.json();
+  if (result.success) {
+    alert('Schedule updated successfully!');
+    closeModal();
+    loadSchedules();
+  } else {
+    alert('Update failed: ' + result.message);
+  }
 }
 
 async function submitEdit(schedule_id) {
@@ -242,6 +263,28 @@ async function submitEdit(schedule_id) {
     </div>
     
   </main>
+
+  <!-- Modal popup for editing schedule -->
+   <div id="editModal" class="modal" style="display:none; position:fixed; top:20%; left:50%; transform:translate(-50%, -20%); background:white; padding:20px; border:2px solid #ccc; border-radius:10px; box-shadow: 0 0 10px rgba(0,0,0,0.3); z-index:1000;width: 320px;">
+    <h3>Update Schedule</h3>
+    <form id="editForm">
+      <label>Weekday:</label>
+       <select id="modal-weekday">
+        <option value="א'">א</option><option value="ב'">ב</option><option value="ג'">ג</option>
+        <option value="ד'">ד</option><option value="ה'">ה</option><option value="ו'">ו</option>
+       </select><br><br>
+     <label>Start Time:</label>
+     <input type="time" id="modal-start"><br><br>
+     <label>End Time:</label>
+     <input type="time" id="modal-end"><br><br>
+     <input type="hidden" id="modal-schedule-id">
+     <input type="hidden" id="modal-classroom">
+     <input type="hidden" id="modal-lecturer">
+     <button type="button" onclick="submitEditModal()">Save</button>
+     <button type="button" onclick="closeModal()">Cancel</button>
+   </form>
+  </div>
+
 
   <footer>
     <p>&copy; 2025 Classroom Scheduling System</p>
