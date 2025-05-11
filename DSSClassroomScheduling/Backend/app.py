@@ -7,7 +7,7 @@ from datetime import time
 from datetime import datetime
 import re
 from datetime import date,  timedelta
-import re  # ודא שזה בתחילת הקובץ
+import re 
 
 app = Flask(__name__)
 
@@ -51,7 +51,6 @@ def extract_course_details(text):
     match = re.search(r"(?P<course_id>.*?)\(\s*(?P<students_num>\d+)\)\[(?P<lecturer_name>.*?)\]\{(?P<course_name>.*?)\}", str(text))
     if match:
         data = match.groupdict()
-        # הסר את היום בשבוע והמקף (למשל "א-")
         if data['course_id'].startswith(('א-', 'ב-', 'ג-', 'ד-', 'ה-', 'ו-', 'ש-')):
             data['course_id'] = data['course_id'][2:]  # הסר את שני התווים הראשונים
         return data
@@ -87,7 +86,6 @@ def process_file(file):
                 if not course_data:
                     continue
 
-                # ל-schedules
                 schedule_rows.append({
                     'classroom_id': classroom_id,
                     'course_id': course_data['course_id'],
@@ -97,7 +95,6 @@ def process_file(file):
                     'time_end': end_time + ':00'
                 })
 
-                # ל-courses
                 course_rows.append(course_data)
 
     # הפוך ל-DataFrame
