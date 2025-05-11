@@ -419,8 +419,7 @@ def api_schedules():
         cr.lecturer_name,
         s.weekday,
         s.time_start,
-        s.time_end,
-        s.status
+        s.time_end
     FROM schedules s
     JOIN classrooms c ON s.classroom_id = c.classroom_id
     JOIN buildings b ON c.building_id = b.building_id

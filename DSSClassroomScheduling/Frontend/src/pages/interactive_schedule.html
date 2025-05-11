@@ -24,7 +24,6 @@
         <td>${row.weekday}</td>
         <td>${row.time_start}</td>
         <td>${row.time_end}</td>
-        <td>${row.status}</td>
         <td><button onclick="editRow(${row.schedule_id})">Edit</button></td>
         `;
 
@@ -94,7 +93,8 @@
   cells[7].innerHTML = `<input type="time" id="end-${schedule_id}" value="${currentEnd}">`;
 
   // החלף כפתור Save
-  cells[9].innerHTML = `<button onclick="submitEdit(${schedule_id})">Save</button>`;
+  cells[8].innerHTML = `<button onclick="submitEdit(${schedule_id})">Save</button>`;
+
 }
 
 async function submitEdit(schedule_id) {
@@ -234,7 +234,6 @@ async function submitEdit(schedule_id) {
             <th>Weekday</th>
             <th>Start</th>
             <th>End</th>
-            <th>Status</th>
             <th>Action</th>
           </tr>
         </thead>
