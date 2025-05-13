@@ -510,6 +510,7 @@ def logout():
     flash('Logged out successfully!')
     return redirect(url_for('login'))
 
+
 @app.route('/api/schedule_details/<int:schedule_id>')
 def get_schedule_details(schedule_id):
     cursor = db.cursor(dictionary=True)
@@ -528,23 +529,22 @@ def get_schedule_details(schedule_id):
 
     cursor.execute("SELECT board_id, board_size FROM boards WHERE classroom_id = %s", (schedule['classroom_id'],))
     boards = cursor.fetchall()
-
     schedule['boards'] = boards
 
     for key in schedule:
-      val = schedule[key]
-      if isinstance(val, (datetime, date)):
-        schedule[key] = val.isoformat()
-      elif isinstance(val, time):
-        schedule[key] = val.strftime('%H:%M')
-      elif isinstance(val, timedelta):
-        schedule[key] = str(val)
-      elif val is None:
-        schedule[key] = ""
-
-
+        val = schedule[key]
+        if isinstance(val, (datetime, date)):
+            schedule[key] = val.isoformat()
+        elif isinstance(val, time):
+            schedule[key] = val.strftime('%H:%M')
+        elif isinstance(val, timedelta):
+            schedule[key] = str(val)
+        elif val is None:
+            schedule[key] = ""
 
     return jsonify(schedule)
+
+# ==============================================
 
 @app.route('/api/save_schedule_update', methods=['POST'])
 def save_schedule_update():
@@ -561,7 +561,7 @@ def save_schedule_update():
 
     cursor = db.cursor(dictionary=True)
 
-    # Get current schedule and course
+    # Get current schedule
     cursor.execute("SELECT classroom_id, course_id FROM schedules WHERE schedule_id = %s", (schedule_id,))
     sched = cursor.fetchone()
     if not sched:
@@ -603,12 +603,15 @@ def save_schedule_update():
             cursor.close()
             return jsonify(success=False, message="Lecturer not available at this time")
 
-    # Query available classrooms
-    cursor.execute("""
+    # ==============================
+    # Dynamic sheltered filter
+    sheltered_filter = "AND is_sheltered = %s" if is_sheltered == "yes" else ""
+
+    query = f"""
         SELECT * FROM classrooms c
         WHERE capacity >= %s
         AND is_remote_learning = %s
-        AND is_sheltered = %s
+        {sheltered_filter}
         AND (
             SELECT COUNT(*) FROM boards b WHERE b.classroom_id = c.classroom_id
         ) >= %s
@@ -622,19 +625,24 @@ def save_schedule_update():
                 (s.time_start >= %s AND s.time_end <= %s)
             )
         )
-    """, (
-        capacity, is_remote, is_sheltered, board_count,
-        schedule_id, weekday,
-        time_start, time_start, time_end, time_end, time_start, time_end
-    ))
+    """
 
+    params = [capacity, is_remote]
+    if is_sheltered == "yes":
+        params.append(is_sheltered)
+
+    params += [
+        board_count, schedule_id, weekday,
+        time_start, time_start, time_end, time_end, time_start, time_end
+    ]
+
+    cursor.execute(query, tuple(params))
     available = cursor.fetchall()
 
     if not available:
         cursor.close()
         return jsonify(success=False, message="No available classrooms found")
 
-    # If no classroom selected yet, return options
     if not selected_classroom_num:
         classroom_options = []
         for c in available:
@@ -652,7 +660,7 @@ def save_schedule_update():
         cursor.close()
         return jsonify(success=False, message="No available classroom matches the new constraints", available_classrooms=classroom_options)
 
-    # Get new classroom ID
+    # Get selected classroom ID
     cursor.execute("SELECT classroom_id FROM classrooms WHERE classroom_num = %s", (selected_classroom_num,))
     classroom_row = cursor.fetchone()
     if not classroom_row:
@@ -683,6 +691,7 @@ def save_schedule_update():
     db.commit()
     cursor.close()
     return jsonify(success=True)
+
 
 
 if __name__ == '__main__':
