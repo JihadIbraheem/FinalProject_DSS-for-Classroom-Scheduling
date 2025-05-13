@@ -32,6 +32,22 @@ header {
     
 }
 
+#editModal {
+  display: none;
+  position: fixed;
+  top: 10%; /* קרוב יותר למעלה */
+  left: 50%;
+  transform: translate(-50%, 0);
+  background: white;
+  padding: 20px;
+  border: 2px solid #ccc;
+  border-radius: 10px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.3);
+  z-index: 1000;
+  width: 500px;         /* הגדלת רוחב */
+  max-height: 80vh;     /* גובה מקסימלי בהתאם למסך */
+  overflow-y: auto;     /* גלילה אם חורג מהגובה */
+}
 
 .logout-button {
     display: inline-block;
