@@ -31,7 +31,88 @@
       });
       loaded = true;
       filterSchedules();
+      drawVisualView(data);
     }
+
+async function renderCalendarView() {
+  const res = await fetch('/api/schedules');
+  const { schedules } = await res.json();
+  const container = document.getElementById('calendar-grid');
+  container.innerHTML = '';
+
+  const weekdays = ["א'", "ב'", "ג'", "ד'", "ה'", "ו'"];
+  const hours = Array.from({ length: 12 }, (_, i) => `${8 + i}:00`);
+
+  // בניית טבלה ריקה
+  const table = document.createElement('table');
+  table.classList.add('calendar-table');
+  const thead = document.createElement('thead');
+  const headerRow = document.createElement('tr');
+
+  headerRow.appendChild(document.createElement('th')); // ריק בפינה
+
+  weekdays.forEach(day => {
+    const th = document.createElement('th');
+    th.textContent = day;
+    headerRow.appendChild(th);
+  });
+  thead.appendChild(headerRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  hours.forEach(hour => {
+    const row = document.createElement('tr');
+    const hourCell = document.createElement('td');
+    hourCell.textContent = hour;
+    row.appendChild(hourCell);
+
+    weekdays.forEach(day => {
+      const cell = document.createElement('td');
+      cell.style.position = 'relative';
+
+      // הוספת השיבוצים לאותה שעה
+      schedules.forEach(s => {
+        if (s.weekday === day && s.time_start.startsWith(hour)) {
+          const box = document.createElement('div');
+          box.className = 'schedule-box';
+          box.innerHTML = `
+            <strong>${s.course_name}</strong><br>
+            ${s.lecturer_name}<br>
+            ${s.classroom_num}<br>
+            ${s.time_start} - ${s.time_end}
+          `;
+          box.onclick = () => editRow(s.schedule_id);
+          cell.appendChild(box);
+        }
+      });
+
+      row.appendChild(cell);
+    });
+
+    tbody.appendChild(row);
+  });
+
+  table.appendChild(tbody);
+  container.appendChild(table);
+}
+
+
+    function drawVisualView(data) {
+      const container = document.getElementById('visual-schedule-container');
+      container.innerHTML = ''; // clear previous
+      data.forEach(schedule => {
+        const box = document.createElement('div');
+        box.className = 'schedule-box';
+        box.innerHTML = `
+      <strong>${schedule.course_name}</strong><br>
+      ${schedule.lecturer_name}<br>
+      <small>${schedule.classroom_num} | ${schedule.building_name}</small><br>
+      <small>${schedule.weekday} ${schedule.time_start} - ${schedule.time_end}</small>
+      `;
+      container.appendChild(box);
+     });
+    }
+
 
     function markEdited(input) {
       input.style.border = '2px solid orange';
@@ -69,7 +150,7 @@ async function editRow(schedule_id) {
   const data = await res.json();
 
   document.getElementById('modal-schedule-id').value = schedule_id;
-  document.getElementById('modal-classroom').value = data.classroom_num || '';  // ← שורה חדשה
+  document.getElementById('modal-classroom').value = data.classroom_num || '';  
   document.getElementById('modal-course-name').value = data.course_name || '';
   document.getElementById('modal-lecturer').value = data.lecturer_name || '';
   document.getElementById('modal-weekday').value = data.weekday || '';
@@ -293,11 +374,22 @@ async function submitEdit(schedule_id) {
    });
    }
 
+function switchView(view) {
+  document.getElementById('table-view').style.display = view === 'table' ? 'block' : 'none';
+  document.getElementById('visual-view').style.display = view === 'visual' ? 'block' : 'none';
 
-  
+  // הצגת מסננים רק בתצוגת טבלה
+  document.getElementById('table-filters').style.display = view === 'table' ? 'block' : 'none';
+
+  if (view === 'visual') {
+    renderCalendarView(); 
+  }
+}
+
+
     window.onload = () => {
    document.getElementById('course-search').value = '';
-   loadSchedules(); // טען את הטבלה בעת טעינת העמוד
+   loadSchedules(); 
    };
 
    function closeClassroomModal() {
@@ -314,8 +406,14 @@ async function submitEdit(schedule_id) {
     </h1>
   </header>
 
-  <main>
+  <main style="display: flex; flex-direction: column; align-items: center; text-align: center;">
     <h2>Editable Schedule Table</h2>
+    <div style="margin-bottom: 20px;">
+      <button onclick="switchView('table')">Table View</button>
+      <button onclick="switchView('visual')">Visual View</button>
+    </div>
+
+    <div id="table-filters">
     <label for="course-search">Search by Course ID:</label>
     <input type="text" id="course-search" placeholder="Enter course ID..." oninput="filterSchedules()" style="margin-bottom: 10px;">
 
@@ -347,9 +445,10 @@ async function submitEdit(schedule_id) {
       <option value="בניין דילן טאובר">בניין דילן טאובר</option>
       <option value="בניין עמיר">בניין עמיר</option>
     </select>
+    </div>
 
-
-    <div class="scrollable-table">
+    <div id="table-view">
+     <div class="scrollable-table">
       <table border="1" width="100%" style="border-collapse: collapse;">
         <thead>
           <tr>
@@ -366,7 +465,15 @@ async function submitEdit(schedule_id) {
         </thead>
         <tbody id="schedule-table-body"></tbody>
       </table>
+     </div>
     </div>
+
+    <div id="visual-view" style="display: none;">
+     <div id="calendar-grid" class="calendar-grid"></div>
+    </div>
+
+</div>
+
     
   </main>
 

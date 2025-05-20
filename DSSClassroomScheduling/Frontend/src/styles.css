@@ -6,11 +6,9 @@ body {
     color: #333;
     display: flex;
     flex-direction: column;
-    justify-content: center;
-    align-items: center;
     height: 100vh;
-    text-align: center;
 }
+
 
 header {
     background-color: #0044cc;
@@ -20,7 +18,10 @@ header {
     text-align: center;
     position: fixed;
     top: 0;
+    z-index: 1000;
+    height: 60px;
 }
+
 
 .scrollable-table {
     max-height: 400px;
@@ -52,7 +53,7 @@ header {
 #classroomSelectionModal {
   display: none;
   position: fixed;
-  top: 10%;
+  top: 5%;
   left: 50%;
   transform: translate(-50%, 0);
   background: white;
@@ -61,8 +62,8 @@ header {
   border-radius: 10px;
   box-shadow: 0 0 10px rgba(0,0,0,0.3);
   z-index: 1001;
-  width: 500px;
-  max-height: 70vh;
+  width: 600px;
+  max-height: 85vh;
   overflow-y: auto;
 }
 
@@ -90,17 +91,19 @@ header {
 
 
 main {
-    margin-top: 5em;
+    flex: 1;
+    overflow-y: auto;
+    margin-top: 60px;   /* מתאים לגובה של header */
+    margin-bottom: 60px; /* מתאים לגובה של footer */
     padding: 2em;
     background: white;
     border-radius: 8px;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    max-width: 600px;
     width: 90%;
-    text-align: center;
-    max-width: 1000px;
-
+    max-width: 1200px;
+    box-sizing: border-box;
 }
+
 
 form {
     display: flex;
@@ -140,7 +143,10 @@ footer {
     text-align: center;
     position: fixed;
     bottom: 0;
+    height: 50px;
+    z-index: 1000;
 }
+
 
 .home-link {
     color: white; 
@@ -156,3 +162,68 @@ footer p {
     color: #ffffff;
     margin-top: 0.1em;
 }
+
+.schedule-box {
+  border: 2px solid #0044cc;
+  background: #e8f0fe;
+  border-radius: 10px;
+  padding: 10px;
+  margin: 10px;
+  width: 220px;
+  height: auto;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  text-align: center;
+}
+
+.calendar-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+  table-layout: fixed;  /* חשוב! כדי שכל עמודת יום תהיה בגודל שווה */
+}
+
+.calendar-table th,
+.calendar-table td {
+  border: 1px solid #ccc;
+  padding: 6px;
+  height: 100px;           /* גובה אחיד */
+  vertical-align: top;
+  text-align: left;
+  overflow: visible;        /* כדי למנוע גלישה */
+  position: relative;
+}
+
+#visual-view {
+  width: 100%;
+  overflow-x: auto;
+}
+
+
+.calendar-table th {
+  background-color: #f0f0f0;
+  font-weight: bold;
+  text-align: center;
+}
+
+.schedule-box {
+  background-color: #e0f7ff;
+  border: 1px solid #007acc;
+  border-radius: 6px;
+  padding: 5px;
+  font-size: 0.85em;
+  margin-bottom: 5px;
+  cursor: pointer;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+#calendar-grid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;            
+  max-width: 100%;        
+  box-sizing: border-box;   
+}
+
+
