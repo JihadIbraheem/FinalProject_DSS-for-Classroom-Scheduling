@@ -1,39 +1,144 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Upload File</title>
-    <link rel="stylesheet" href="/static/styles.css">
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Upload Schedule</title>
+  <!-- Google Font -->
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet"/>
+  <style>
+    /* RESET + BASE */
+    * { box-sizing:border-box; margin:0; padding:0; font-family:'Poppins',sans-serif; }
+    body {
+      min-height:100vh; display:flex; flex-direction:column;
+      background: #F3F4F6;
+      color:#374151;
+    }
+
+    header {
+      background:#1E3A8A; color:#fff;
+      padding:1rem 2rem; text-align:center;
+      font-size:1.5rem; font-weight:600;
+      box-shadow:0 2px 8px rgba(0,0,0,0.1);
+    }
+    header .home-link { color:inherit; text-decoration:none; }
+
+    main {
+      flex:1; display:flex; justify-content:center; align-items:start;
+      padding:2rem;
+    }
+    .card {
+      background:#fff; border-radius:1rem;
+      padding:2rem; max-width:500px; width:100%;
+      box-shadow:0 12px 20px rgba(0,0,0,0.1);
+    }
+
+    h2 {
+      margin-bottom:1.5rem; color:#1E3A8A; text-align:center;
+      font-size:1.75rem;
+    }
+
+    /* Drag & Drop Area */
+    .upload-area {
+      position:relative;
+      border:2px dashed #CBD5E1; border-radius:0.75rem;
+      padding:2rem; text-align:center;
+      transition:border-color .3s, background .3s;
+    }
+    .upload-area:hover {
+      border-color:#3B82F6;
+      background:rgba(59,130,246,0.05);
+    }
+    .upload-area input[type="file"] {
+      position:absolute; top:0; left:0; width:100%; height:100%;
+      opacity:0; cursor:pointer;
+    }
+    .upload-area svg {
+      width:48px; height:48px; fill:#60A5FA; margin-bottom:0.5rem;
+    }
+    .upload-area p {
+      color:#6B7280; font-size:1rem;
+    }
+
+    /* Buttons */
+    .btn {
+      display:inline-block; width:100%;
+      padding:0.75rem; margin-top:1.5rem;
+      text-align:center; text-decoration:none;
+      font-weight:600; border-radius:0.5rem;
+      transition:background .3s, transform .2s;
+    }
+    .btn-primary {
+      background:#1E3A8A; color:#fff; border:none;
+    }
+    .btn-primary:hover { background:#2563EB; transform:translateY(-2px); }
+    .btn-danger {
+      background:#DC2626; color:#fff; border:none;
+    }
+    .btn-danger:hover { background:#B91C1C; transform:translateY(-2px); }
+
+    /* Flash Messages */
+    .flash {
+      margin-top:1.5rem;
+      padding:1rem; border-radius:0.5rem;
+      background:#D1FAE5; color:#065F46;
+      box-shadow:0 4px 10px rgba(0,0,0,0.05);
+    }
+
+    footer {
+      background:#1E3A8A; color:#fff;
+      text-align:center; padding:1rem;
+      font-size:0.9rem;
+      box-shadow:0 -2px 8px rgba(0,0,0,0.1);
+    }
+  </style>
 </head>
 <body>
-    <header>
-        <h1>
-            <a href="/home" class="home-link">Classroom Scheduling System</a>
-        </h1>
-    </header>
-    <main>
-        <h2>Upload File</h2>
-        <form action="/upload" method="POST" enctype="multipart/form-data">
-            <label for="file">Choose a File</label>
-            <input type="file" id="file" name="file" accept=".xls,.xlsx" required>
-            <button type="submit">Upload</button>
-        </form>
-        <form action="/delete_data" method="POST" style="margin-top: 20px;" onsubmit="return confirm('Are you sure you want to delete the existing scheduling data from the database?');">
-            <button type="submit" style="background-color: red; color: white;">Delete Existing Data</button>
-        </form>        
-        {% with messages = get_flashed_messages() %}
+
+  <header>
+    <h1><a href="/home" class="home-link">Classroom Scheduling System</a></h1>
+  </header>
+
+  <main>
+    <div class="card">
+      <h2>Upload New Schedule</h2>
+
+      <!-- Drag & Drop File Upload -->
+      <form action="/upload" method="POST" enctype="multipart/form-data">
+        <div class="upload-area">
+          <!-- Optional SVG icon -->
+          <svg viewBox="0 0 24 24">
+            <path d="M12 16l4-5h-3V4h-2v7H8l4 5zm8-1v5H4v-5H2v5a2 2 0 002 2h16a2 2 0 002-2v-5h-2z"/>
+          </svg>
+          <p>Drag &amp; drop your Excel file here<br>or click to browse</p>
+          <input type="file" name="file" accept=".xls,.xlsx" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Upload Schedule</button>
+      </form>
+
+      <!-- Delete Data -->
+      <form action="/delete_data" method="POST" onsubmit="return confirm('Are you sure you want to delete all existing data?');">
+        <button type="submit" class="btn btn-danger">Delete Existing Data</button>
+      </form>
+
+      <!-- Flash Messages -->
+      {% with messages = get_flashed_messages() %}
         {% if messages %}
-        <ul>
-            {% for message in messages %}
-            <li>{{ message }}</li>
-            {% endfor %}
-        </ul>
+          <div class="flash">
+            <ul>
+              {% for msg in messages %}
+                <li>{{ msg }}</li>
+              {% endfor %}
+            </ul>
+          </div>
         {% endif %}
-        {% endwith %}
-    </main>
-    <footer>
-        <p>&copy; 2025 Classroom Scheduling System</p>
-    </footer>
+      {% endwith %}
+    </div>
+  </main>
+
+  <footer>
+    &copy; 2025 Classroom Scheduling System
+  </footer>
+
 </body>
 </html>

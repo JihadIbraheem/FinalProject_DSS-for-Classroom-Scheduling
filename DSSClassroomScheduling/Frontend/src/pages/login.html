@@ -1,29 +1,147 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login</title>
-    <link rel="stylesheet" href="/static/styles.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login</title>
+  <!-- Google Font -->
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    /* Base Reset & Fonts */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Poppins', sans-serif;
+    }
+
+    body {
+      background: linear-gradient(to right, #1E3A8A, #3B82F6);
+      color: #333;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    header {
+      background-color: #1E3A8A;
+      padding: 1.5rem;
+      text-align: center;
+      color: white;
+      font-size: 1.5rem;
+      font-weight: bold;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    }
+
+    /* Main Form Container */
+    main {
+      flex-grow: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 2rem;
+      background-color: #F3F4F6;
+    }
+
+    form {
+      background-color: #fff;
+      padding: 2rem 2.5rem;
+      border-radius: 1rem;
+      box-shadow: 0 12px 20px rgba(0, 0, 0, 0.1);
+      width: 100%;
+      max-width: 400px;
+      transition: transform 0.3s ease;
+    }
+
+    form:hover {
+      transform: scale(1.01);
+    }
+
+    /* Heading */
+    form h2 {
+      text-align: center;
+      margin-bottom: 1.5rem;
+      color: #1E3A8A;
+    }
+
+    /* Labels */
+    label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 500;
+      color: #374151;
+    }
+
+    /* Inputs */
+    input[type="text"],
+    input[type="password"] {
+      width: 100%;
+      padding: 0.75rem;
+      margin-bottom: 1.25rem;
+      border: 1px solid #D1D5DB;
+      border-radius: 0.5rem;
+      font-size: 1rem;
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    input:focus {
+      border-color: #3B82F6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+      outline: none;
+    }
+
+    /* Button */
+    button {
+      width: 100%;
+      padding: 0.75rem;
+      background-color: #1E3A8A;
+      color: white;
+      border: none;
+      border-radius: 0.5rem;
+      font-size: 1rem;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background-color 0.3s ease, transform 0.2s ease;
+    }
+
+    button:hover {
+      background-color: #2563EB;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 16px rgba(37, 99, 235, 0.3);
+    }
+
+    /* Footer */
+    footer {
+      background-color: #1E3A8A;
+      color: white;
+      text-align: center;
+      padding: 1rem;
+      font-size: 0.9rem;
+      box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+    }
+  </style>
 </head>
 <body>
-    <header>
-        <h1>Classroom Scheduling System</h1>
-    </header>
-    <main>
-        <form action="/login" method="POST">
-            <h2>Login</h2>
-            <label for="username">Username:</label>
-            <input type="text" id="username" name="username" required>
-            
-            <label for="password">Password:</label>
-            <input type="password" id="password" name="password" required>
-            
-            <button type="submit">Login</button>
-        </form>
-    </main>
-    <footer>
-        <p>&copy; 2025 Classroom Scheduling System</p>
-    </footer>
+  <header>
+    <h1>Classroom Scheduling System</h1>
+  </header>
+  <main>
+    <form action="/login" method="POST">
+      <h2>Login</h2>
+
+      <label for="username">Username:</label>
+      <input type="text" id="username" name="username" required>
+
+      <label for="password">Password:</label>
+      <input type="password" id="password" name="password" required>
+
+      <button type="submit">Login</button>
+    </form>
+  </main>
+  <footer>
+    <p>&copy; 2025 Classroom Scheduling System</p>
+  </footer>
 </body>
 </html>
+
