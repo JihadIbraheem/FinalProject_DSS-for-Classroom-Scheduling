@@ -17,10 +17,10 @@ app.static_folder = '../Frontend/src'
 app.secret_key = 'your_secret_key'
 
 db = mysql.connector.connect(
-    host="127.0.0.1",
-    port=3306,
+    host="localhost",
+    port=3307,
     user="root",
-    password="322858184ji",
+    password="212165351Hala",
     database="classroom_scheduling"
 )
 
@@ -545,7 +545,6 @@ def get_schedule_details(schedule_id):
     return jsonify(schedule)
 
 # ==============================================
-
 @app.route('/api/save_schedule_update', methods=['POST'])
 def save_schedule_update():
     data = request.get_json()
@@ -561,138 +560,139 @@ def save_schedule_update():
 
     cursor = db.cursor(dictionary=True)
 
-    # Get current schedule
-    cursor.execute("SELECT classroom_id, course_id FROM schedules WHERE schedule_id = %s", (schedule_id,))
-    sched = cursor.fetchone()
-    if not sched:
-        cursor.close()
-        return jsonify(success=False, message="Schedule not found")
+    try:
+        # שליפת שיבוץ קיים
+        cursor.execute("SELECT classroom_id, course_id FROM schedules WHERE schedule_id = %s", (schedule_id,))
+        sched = cursor.fetchone()
+        if not sched:
+            return jsonify(success=False, message="Schedule not found")
 
-    old_classroom_id = sched['classroom_id']
-    course_id = sched['course_id']
+        old_classroom_id = sched['classroom_id']
+        course_id = sched['course_id']
 
-    # Check if time or weekday changed
-    cursor.execute("SELECT weekday, time_start, time_end FROM schedules WHERE schedule_id = %s", (schedule_id,))
-    original = cursor.fetchone()
-    time_changed = (
-        original['weekday'] != weekday or
-        str(original['time_start']) != time_start or
-        str(original['time_end']) != time_end
-    )
+        # בדיקת שינוי בזמן
+        cursor.execute("SELECT weekday, time_start, time_end FROM schedules WHERE schedule_id = %s", (schedule_id,))
+        original = cursor.fetchone()
+        time_changed = (
+            original['weekday'] != weekday or
+            str(original['time_start']) != time_start or
+            str(original['time_end']) != time_end
+        )
 
-    # Check lecturer availability if time changed
-    if time_changed:
-        cursor.execute("SELECT lecturer_name FROM courses WHERE course_id = %s", (course_id,))
-        lecturer = cursor.fetchone()['lecturer_name']
+        # בדיקת זמינות מרצה
+        if time_changed:
+            cursor.execute("SELECT lecturer_name FROM courses WHERE course_id = %s", (course_id,))
+            lecturer = cursor.fetchone()['lecturer_name']
+
+            cursor.execute("""
+                SELECT 1 FROM schedules s
+                JOIN courses c ON s.course_id = c.course_id
+                WHERE s.schedule_id != %s AND c.lecturer_name = %s AND s.weekday = %s
+                AND (
+                    (s.time_start <= %s AND s.time_end > %s) OR
+                    (s.time_start < %s AND s.time_end >= %s) OR
+                    (s.time_start >= %s AND s.time_end <= %s)
+                )
+            """, (
+                schedule_id, lecturer, weekday,
+                time_start, time_start, time_end, time_end, time_start, time_end
+            ))
+            if cursor.fetchone():
+                return jsonify(success=False, message="Lecturer not available at this time")
+
+        # סינון כיתות זמינות
+        sheltered_filter = "AND is_sheltered = %s" if is_sheltered == "yes" else ""
+        query = f"""
+            SELECT * FROM classrooms c
+            WHERE capacity >= %s
+            AND is_remote_learning = %s
+            {sheltered_filter}
+            AND (
+                SELECT COUNT(*) FROM boards b WHERE b.classroom_id = c.classroom_id
+            ) >= %s
+            AND NOT EXISTS (
+                SELECT 1 FROM schedules s
+                WHERE s.classroom_id = c.classroom_id AND s.schedule_id != %s
+                AND s.weekday = %s
+                AND (
+                    (s.time_start <= %s AND s.time_end > %s) OR
+                    (s.time_start < %s AND s.time_end >= %s) OR
+                    (s.time_start >= %s AND s.time_end <= %s)
+                )
+            )
+        """
+        params = [capacity, is_remote]
+        if is_sheltered == "yes":
+            params.append(is_sheltered)
+        params += [
+            board_count, schedule_id, weekday,
+            time_start, time_start, time_end, time_end, time_start, time_end
+        ]
+        cursor.execute(query, tuple(params))
+        available = cursor.fetchall()
+
+        # אין כיתות זמינות
+        if not available:
+            return jsonify(success=False, message="No available classrooms found")
+
+        # שליחת אופציות בחירה
+        if not selected_classroom_num:
+            classroom_options = []
+            for c in available:
+                cursor.execute("""
+                    SELECT c.classroom_num, c.capacity, c.is_remote_learning, c.is_sheltered,
+                           b.building_name,
+                           (SELECT COUNT(*) FROM boards WHERE classroom_id = c.classroom_id) AS board_count
+                    FROM classrooms c
+                    JOIN buildings b ON c.building_id = b.building_id
+                    WHERE c.classroom_id = %s
+                """, (c['classroom_id'],))
+                option = cursor.fetchone()
+                if option:
+                    classroom_options.append(option)
+                else:
+                    _ = cursor.fetchall()  # מניעת שגיאת unread result
+
+            return jsonify(success=False, message="No available classroom matches the new constraints", available_classrooms=classroom_options)
+
+        # עדכון שיבוץ
+        cursor.execute("SELECT classroom_id FROM classrooms WHERE classroom_num = %s", (selected_classroom_num,))
+        classroom_row = cursor.fetchone()
+        if not classroom_row:
+            return jsonify(success=False, message="Selected classroom not found")
+
+        new_classroom_id = classroom_row['classroom_id']
 
         cursor.execute("""
-            SELECT * FROM schedules s
-            JOIN courses c ON s.course_id = c.course_id
-            WHERE s.schedule_id != %s AND c.lecturer_name = %s AND s.weekday = %s
-            AND (
-                (s.time_start <= %s AND s.time_end > %s) OR
-                (s.time_start < %s AND s.time_end >= %s) OR
-                (s.time_start >= %s AND s.time_end <= %s)
-            )
-        """, (
-            schedule_id, lecturer, weekday,
-            time_start, time_start, time_end, time_end, time_start, time_end
-        ))
-        conflict = cursor.fetchone()
-        if conflict:
-            cursor.close()
-            return jsonify(success=False, message="Lecturer not available at this time")
+            UPDATE schedules
+            SET classroom_id=%s, weekday=%s, time_start=%s, time_end=%s
+            WHERE schedule_id = %s
+        """, (new_classroom_id, weekday, time_start, time_end, schedule_id))
 
-    # ==============================
-    # Dynamic sheltered filter
-    sheltered_filter = "AND is_sheltered = %s" if is_sheltered == "yes" else ""
+        cursor.execute("""
+            UPDATE classrooms
+            SET capacity=%s, is_remote_learning=%s, is_sheltered=%s
+            WHERE classroom_id = %s
+        """, (capacity, is_remote, is_sheltered, new_classroom_id))
 
-    query = f"""
-        SELECT * FROM classrooms c
-        WHERE capacity >= %s
-        AND is_remote_learning = %s
-        {sheltered_filter}
-        AND (
-            SELECT COUNT(*) FROM boards b WHERE b.classroom_id = c.classroom_id
-        ) >= %s
-        AND NOT EXISTS (
-            SELECT 1 FROM schedules s
-            WHERE s.classroom_id = c.classroom_id AND s.schedule_id != %s
-            AND s.weekday = %s
-            AND (
-                (s.time_start <= %s AND s.time_end > %s) OR
-                (s.time_start < %s AND s.time_end >= %s) OR
-                (s.time_start >= %s AND s.time_end <= %s)
-            )
-        )
-    """
+        cursor.execute("DELETE FROM boards WHERE classroom_id = %s", (new_classroom_id,))
+        for _ in range(board_count):
+            cursor.execute("INSERT INTO boards (board_size, classroom_id) VALUES (%s, %s)", (1, new_classroom_id))
 
-    params = [capacity, is_remote]
-    if is_sheltered == "yes":
-        params.append(is_sheltered)
+        db.commit()
+        return jsonify(success=True)
 
-    params += [
-        board_count, schedule_id, weekday,
-        time_start, time_start, time_end, time_end, time_start, time_end
-    ]
-
-    cursor.execute(query, tuple(params))
-    available = cursor.fetchall()
-
-    if not available:
+    finally:
+        try:
+            cursor.fetchall()  # לניקוי אם נשארו תוצאות
+        except:
+            pass
         cursor.close()
-        return jsonify(success=False, message="No available classrooms found")
-
-    if not selected_classroom_num:
-        classroom_options = []
-        for c in available:
-            cursor.execute("""
-                SELECT c.classroom_num, c.capacity, c.is_remote_learning, c.is_sheltered,
-                       b.building_name,
-                       (SELECT COUNT(*) FROM boards WHERE classroom_id = c.classroom_id) AS board_count
-                FROM classrooms c
-                JOIN buildings b ON c.building_id = b.building_id
-                WHERE c.classroom_id = %s
-            """, (c['classroom_id'],))
-            option = cursor.fetchone()
-            if option:
-                classroom_options.append(option)
-        cursor.close()
-        return jsonify(success=False, message="No available classroom matches the new constraints", available_classrooms=classroom_options)
-
-    # Get selected classroom ID
-    cursor.execute("SELECT classroom_id FROM classrooms WHERE classroom_num = %s", (selected_classroom_num,))
-    classroom_row = cursor.fetchone()
-    if not classroom_row:
-        cursor.close()
-        return jsonify(success=False, message="Selected classroom not found")
-
-    new_classroom_id = classroom_row['classroom_id']
-
-    # Update schedule
-    cursor.execute("""
-        UPDATE schedules
-        SET classroom_id=%s, weekday=%s, time_start=%s, time_end=%s
-        WHERE schedule_id = %s
-    """, (new_classroom_id, weekday, time_start, time_end, schedule_id))
-
-    # Update classroom
-    cursor.execute("""
-        UPDATE classrooms
-        SET capacity=%s, is_remote_learning=%s, is_sheltered=%s
-        WHERE classroom_id = %s
-    """, (capacity, is_remote, is_sheltered, new_classroom_id))
-
-    # Update boards
-    cursor.execute("DELETE FROM boards WHERE classroom_id = %s", (new_classroom_id,))
-    for _ in range(board_count):
-        cursor.execute("INSERT INTO boards (board_size, classroom_id) VALUES (%s, %s)", (1, new_classroom_id))
-
-    db.commit()
-    cursor.close()
-    return jsonify(success=True)
 
 
+@app.route('/second_schedule')
+def second_schedule():
+    return render_template('second_schedule.html')
 
 if __name__ == '__main__':
     app.run(debug=True)
