@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session
-from flask import jsonify, Response
+from flask import jsonify, Response, send_from_directory
+
 import os
 import pandas as pd
 import mysql.connector
@@ -229,6 +230,9 @@ def insert_courses_to_db(courses_df):
     db.commit()
     cursor.close()
 
+@app.route('/uploads/<path:filename>')
+def uploaded_file(filename):
+    return send_from_directory('uploads', filename)
 
 
 @app.route('/upload', methods=['GET', 'POST'])

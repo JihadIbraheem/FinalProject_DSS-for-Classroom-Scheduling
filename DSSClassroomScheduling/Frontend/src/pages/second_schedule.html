@@ -55,6 +55,42 @@
     }
     .schedule-card button:hover { background:#1E40AF; }
 
+    .schedule-box {
+  border-radius: 4px;
+  padding: 4px;
+  color: white;
+  margin: 2px 0;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: center;
+  font-weight: 500;
+  }
+  /* צבעים לפי קורס (באמצעות מחלקות דינמיות או הגרלה בג'אווהסקריפט) */
+  .color-0 { background-color: #2563EB; }
+  .color-1 { background-color: #10B981; }
+  .color-2 { background-color: #F59E0B; }
+  .color-3 { background-color: #EF4444; }
+  .color-4 { background-color: #8B5CF6; }
+  .color-5 { background-color: #EC4899; }
+  .color-6 { background-color: #14B8A6; }
+  .color-7 { background-color: #0EA5E9; }
+  .color-8 { background-color: #A3E635; }
+  .color-9 { background-color: #F43F5E; }
+
+
+  .schedule-box {
+  border-radius: 6px;
+  padding: 6px;
+  margin: 2px;
+  font-size: 12px;
+  cursor: pointer;
+  color: white;
+  font-weight: 500;
+  text-align: center;
+  box-shadow: 0 5px 2px rgba(0,0,0,0.15);
+  border: 1px solid #fff;
+  }
+
     /* MODALS */
     .modal-backdrop {
       display:none; position:fixed; top:0; left:0; right:0; bottom:0;
@@ -211,6 +247,10 @@ async function renderBuildingSchedule() {
   const buildings = [...new Set(filtered.map(s => s.building_name))].sort();
   const hours = Array.from({ length: 12 }, (_, i) => `${8 + i}:00`);
 
+  // מיפוי צבעים לפי קורס
+  const colorMap = {};
+  let colorIndex = 0;
+
   const table = document.createElement('table');
   table.className = 'calendar-table';
 
@@ -242,12 +282,27 @@ async function renderBuildingSchedule() {
       matches.forEach(s => {
         const block = document.createElement('div');
         block.className = 'schedule-box';
+
+        // קביעת צבע ייחודי לכל קורס
+        const courseKey = s.course_id + s.course_name;
+        if (!(courseKey in colorMap)) {
+          colorMap[courseKey] = `color-${colorIndex % 10}`;
+          colorIndex++;
+        }
+        block.classList.add(colorMap[courseKey]);
+
+        // תוכן התיבה + tooltip
         block.innerHTML = `
           <strong>${s.course_name}</strong><br>
           ${s.classroom_num}<br>
           ${s.time_start} - ${s.time_end}<br>
           ${s.lecturer_name}
         `;
+        block.title = `Course: ${s.course_name}
+Classroom: ${s.classroom_num}
+Lecturer: ${s.lecturer_name}
+${s.time_start} - ${s.time_end}`;
+
         block.onclick = () => editRow(s.schedule_id);
         cell.appendChild(block);
       });
@@ -261,6 +316,7 @@ async function renderBuildingSchedule() {
   table.appendChild(tbody);
   container.appendChild(table);
 }
+
 
 
 function formatTimeToInput(value) {
@@ -371,7 +427,7 @@ async function renderCalendarView() {
         tbody.appendChild(row);
       });
     }
-    async function submitEditModal() {
+async function submitEditModal() {
   const schedule_id = document.getElementById('modal-schedule-id').value;
   const weekday = document.getElementById('modal-weekday').value;
   const time_start = document.getElementById('modal-start').value;
@@ -409,7 +465,12 @@ async function renderCalendarView() {
 
       classroomOptions.forEach(c => {
         const li = document.createElement('li');
+
         li.innerHTML = `
+          <div style="display:flex; gap:8px; justify-content:center; margin-bottom:8px;">
+            <img src="/uploads/classroomimg1.png" alt="Classroom Image 1" style="width:48%; max-height:120px; object-fit:cover; border-radius:6px;" />
+            <img src="/uploads/classroomimg2.png" alt="Classroom Image 2" style="width:48%; max-height:120px; object-fit:cover; border-radius:6px;" />
+          </div>
           <strong>Classroom:</strong> ${c.classroom_num}<br>
           <strong>Capacity:</strong> ${c.capacity}<br>
           <strong>Building:</strong> ${c.building_name}<br>
@@ -417,7 +478,15 @@ async function renderCalendarView() {
           <strong>Sheltered:</strong> ${c.is_sheltered}<br>
           <strong>Boards:</strong> ${c.board_count}
         `;
+
         li.style.cursor = 'pointer';
+        li.style.margin = '5px 0';
+        li.style.padding = '5px';
+        li.style.border = '1px solid #ccc';
+        li.style.borderRadius = '5px';
+        li.onmouseenter = () => li.style.backgroundColor = '#eee';
+        li.onmouseleave = () => li.style.backgroundColor = 'white';
+
         li.onclick = async () => {
           if (!confirm(`Are you sure you want to switch to classroom ${c.classroom_num}?`)) return;
 
@@ -434,29 +503,30 @@ async function renderCalendarView() {
           if (result2.success) {
             alert("Update successful");
             closeModal();
-            loadSchedules();
+            renderBuildingSchedule();
           } else {
             alert("Update failed: " + result2.message);
           }
         };
+
         list.appendChild(li);
       });
 
       modal.style.display = 'flex';
-      loadSchedules();  // זה ירנדר מחדש את היומן
+      renderBuildingSchedule();
       return;
     }
   }
 
-  // אם לא הייתה בעיה או שבוצע עדכון תקין
   if (result.success) {
     alert("Update successful");
     closeModal();
-    loadSchedules();
+    renderBuildingSchedule();
   } else {
     alert("Update failed: " + result.message);
   }
 }
+
 async function editRow(schedule_id) {
   const res = await fetch(`/api/schedule_details/${schedule_id}`);
   const data = await res.json();
@@ -475,7 +545,6 @@ document.getElementById('modal-end').value = formatTimeToInput(data.time_end);
 
   document.getElementById('modal-board-count').value = data.boards.length || 0;
 
-  // ✅ הצגת המודל בצורה תקינה
   document.getElementById('editModalBackdrop').style.display = 'flex';
 
   window.originalSchedule = {
