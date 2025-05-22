@@ -583,26 +583,28 @@ def save_schedule_update():
             str(original['time_end']) != time_end
         )
 
-        # בדיקת זמינות מרצה
+        # בדיקת זמינות מרצה רק אם קיים מרצה
         if time_changed:
             cursor.execute("SELECT lecturer_name FROM courses WHERE course_id = %s", (course_id,))
-            lecturer = cursor.fetchone()['lecturer_name']
+            lecturer_row = cursor.fetchone()
+            lecturer = lecturer_row['lecturer_name'] if lecturer_row and lecturer_row['lecturer_name'] else None
 
-            cursor.execute("""
-                SELECT 1 FROM schedules s
-                JOIN courses c ON s.course_id = c.course_id
-                WHERE s.schedule_id != %s AND c.lecturer_name = %s AND s.weekday = %s
-                AND (
-                    (s.time_start <= %s AND s.time_end > %s) OR
-                    (s.time_start < %s AND s.time_end >= %s) OR
-                    (s.time_start >= %s AND s.time_end <= %s)
-                )
-            """, (
-                schedule_id, lecturer, weekday,
-                time_start, time_start, time_end, time_end, time_start, time_end
-            ))
-            if cursor.fetchone():
-                return jsonify(success=False, message="Lecturer not available at this time")
+            if lecturer:
+                cursor.execute("""
+                    SELECT 1 FROM schedules s
+                    JOIN courses c ON s.course_id = c.course_id
+                    WHERE s.schedule_id != %s AND c.lecturer_name = %s AND s.weekday = %s
+                    AND (
+                        (s.time_start <= %s AND s.time_end > %s) OR
+                        (s.time_start < %s AND s.time_end >= %s) OR
+                        (s.time_start >= %s AND s.time_end <= %s)
+                    )
+                """, (
+                    schedule_id, lecturer, weekday,
+                    time_start, time_start, time_end, time_end, time_start, time_end
+                ))
+                if cursor.fetchone():
+                    return jsonify(success=False, message="Lecturer not available at this time")
 
         # סינון כיתות זמינות
         sheltered_filter = "AND is_sheltered = %s" if is_sheltered == "yes" else ""
@@ -688,10 +690,11 @@ def save_schedule_update():
 
     finally:
         try:
-            cursor.fetchall()  # לניקוי אם נשארו תוצאות
+            cursor.fetchall()
         except:
             pass
         cursor.close()
+
 
 
 @app.route('/second_schedule')
