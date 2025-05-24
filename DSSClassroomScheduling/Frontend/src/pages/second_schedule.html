@@ -55,81 +55,49 @@
     }
     .schedule-card button:hover { background:#1E40AF; }
 
-.schedule-box {
+    .schedule-box {
+  position: relative;
   border-radius: 6px;
-  padding: 6px;
-  margin: 2px;
-  font-size: 12px;
+  padding: 10px 6px;
+  margin: 4px 0;
+  font-size: 13px;
   cursor: pointer;
   color: white;
   font-weight: 500;
   text-align: center;
   box-shadow: 0 5px 2px rgba(0,0,0,0.15);
   border: 1px solid #fff;
-  white-space: nowrap;
+  white-space: normal;
   overflow: hidden;
-  text-overflow: ellipsis;
-  transition: width 0.4s ease;
-  display: block;
-  width: 100%;
+  line-height: 1.4;
+  min-height: 70px;
+  height: auto;
+  background-color: inherit;
+  transition: transform 0.4s ease;
+  transform-origin: left center;
+  display: inline-block;
 }
- 
-.schedule-box.expanding {
-  transform: scaleX(1.5);
-  transform-origin: left;
-  z-index: 10;
-  position: relative;
-  white-space: normal;        /* שורה חדשה אם צריך */
-  overflow: hidden;           /* הגבלת גלישה */
-  text-overflow: ellipsis;    /* שלוש נקודות אם נחתך */
+.schedule-content {
+  transform: none !important;
 }
 
-.schedule-box * {
-  transform: none !important;   /* ביטול הגדלה של הטקסט */
-}
 
 .schedule-box:hover {
   transform: scale(1.05);
 }
 
+
 .schedule-box.expanding {
-  transition: all 0.3s ease;
-  transform: scaleX(1.5);
-  transform-origin: left;
+  width: 200%;
   z-index: 10;
   position: relative;
+  transition: width 0.4s ease;
+    transform: none !important;
+  width: 100%;
+  white-space: normal;
+  word-wrap: break-word;
 }
 
-.schedule-content {
-  transform: none !important;
-  display: block;
-}
-.schedule-box.expanding .schedule-content {
-  transform: none !important;
-  width: 100%;        /* שומר על הגודל המקורי */
-}
-
-
-
-.schedule-box {
-  border-radius: 6px;
-  padding: 10px 6px; /* יותר ריווח פנימי */
-  margin: 4px 0;
-  font-size: 13px; /* טקסט קריא יותר */
-  cursor: pointer;
-  color: white;
-  font-weight: 500;
-  text-align: center;
-  box-shadow: 0 5px 2px rgba(0,0,0,0.15);
-  border: 1px solid #fff;
-  white-space: normal; /* מאפשר ירידת שורה */
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.4;
-  height: auto; /* שיבוץ ייגדל לגובה לפי תוכן */
-  min-height: 70px; /* גובה מינימלי */
-  transition: transform 0.3s ease, height 0.3s ease;
-}
 
 
     /* MODALS */
@@ -352,10 +320,9 @@ async function renderBuildingSchedule() {
         const block = document.createElement('div');
         block.className = 'schedule-box';
         block.style.backgroundColor = getFacultyColor(s.course_id);
-        block.style.width = '100%';  // default
+        
         block.style.position = 'relative';
         block.style.height = 'auto';
-        block.style.transition = 'width 0.4s ease';
 
         block.innerHTML = `
         <div class="schedule-content">
@@ -371,21 +338,21 @@ Classroom: ${s.classroom_num}
 Lecturer: ${s.lecturer_name}
 ${s.time_start} - ${s.time_end}`;
 
-        // התרחבות רוחב מדויקת אחרי 2 שניות
-        let expandTimeout;
-        block.onmouseenter = () => {
-          expandTimeout = setTimeout(() => {
-            const scale = durationMin / 60;
-            block.style.transformOrigin = 'left';
-            block.style.transform = `scaleX(${scale})`;
-            block.style.zIndex = '10';
-          }, 2000);
-        };
-        block.onmouseleave = () => {
-          clearTimeout(expandTimeout);
-          block.style.transform = '';
-          block.style.zIndex = '';
-        };
+let expandTimeout;
+block.addEventListener('mouseenter', () => {
+  expandTimeout = setTimeout(() => {
+    const scale = durationMin / 60;
+    block.style.transform = `scaleX(${scale})`;
+    block.style.zIndex = '10';
+  }, 2000);
+});
+
+block.addEventListener('mouseleave', () => {
+  clearTimeout(expandTimeout);
+  block.style.transform = '';
+  block.style.zIndex = '';
+});
+
 
         block.onclick = () => editRow(s.schedule_id);
         cell.appendChild(block);
@@ -548,15 +515,29 @@ async function submitEditModal() {
 
       classroomOptions.forEach(c => {
         const li = document.createElement('li');
+        // חישוב קומה מתוך מספר כיתה (לדוג' 78-002-228 -> קומה 2)
+        const floor = (() => {
+          const parts = c.classroom_num.split('-');
+          if (parts.length >= 3) return parseInt(parts[1], 10);
+          return '-';
+        })();
+
+        const roomNumber = (() => {
+          const parts = c.classroom_num.split('-');
+          return parts.length === 3 ? parts[2] : c.classroom_num;
+        })();
+
+
 
         li.innerHTML = `
           <div style="display:flex; gap:8px; justify-content:center; margin-bottom:8px;">
             <img src="/uploads/classroomimg1.png" alt="Classroom Image 1" style="width:48%; max-height:120px; object-fit:cover; border-radius:6px;" />
             <img src="/uploads/classroomimg2.png" alt="Classroom Image 2" style="width:48%; max-height:120px; object-fit:cover; border-radius:6px;" />
           </div>
-          <strong>Classroom:</strong> ${c.classroom_num}<br>
-          <strong>Capacity:</strong> ${c.capacity}<br>
+          <strong>Classroom:</strong> ${roomNumber}<br>
           <strong>Building:</strong> ${c.building_name}<br>
+          <strong>Floor:</strong> ${floor}<br>
+          <strong>Capacity:</strong> ${c.capacity}<br>
           <strong>Remote Learning:</strong> ${c.is_remote_learning}<br>
           <strong>Sheltered:</strong> ${c.is_sheltered}<br>
           <strong>Boards:</strong> ${c.board_count}
