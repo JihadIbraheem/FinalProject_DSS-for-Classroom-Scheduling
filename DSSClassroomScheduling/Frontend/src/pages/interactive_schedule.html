@@ -242,36 +242,20 @@
       });
     }
 
-async function editRow(schedule_id) {
-  const res = await fetch(`/api/schedule_details/${schedule_id}`);
-  const data = await res.json();
+function editRow(schedule_id) {
+  const schedule = schedules.find(s => s.schedule_id === schedule_id);
+  if (!schedule) return;
 
-  document.getElementById('modal-schedule-id').value = schedule_id;
-  document.getElementById('modal-classroom').value = data.classroom_num || '';  
-  document.getElementById('modal-course-name').value = data.course_name || '';
-  document.getElementById('modal-lecturer').value = data.lecturer_name || '';
-  document.getElementById('modal-weekday').value = data.weekday || '';
-  document.getElementById('modal-start').value = data.time_start || '';
-  document.getElementById('modal-end').value = data.time_end || '';
-  document.getElementById('modal-capacity').value = data.capacity || '';
-  document.getElementById('modal-remote').value = data.is_remote_learning || '';
-  document.getElementById('modal-sheltered').value = data.is_sheltered || '';
+  // הפנייה לעמוד עם פרמטרים: schedule_id ו-weekday
+  const params = new URLSearchParams({
+    schedule_id: schedule.schedule_id,
+    weekday: schedule.weekday
+  });
 
-  document.getElementById('modal-board-count').value = data.boards.length || 0;
+  window.location.href = `/second_schedule?${params.toString()}`;
 
-  // ✅ הצגת המודל בצורה תקינה
-  document.getElementById('editModalBackdrop').style.display = 'flex';
-
-  window.originalSchedule = {
-    weekday: data.weekday || '',
-    time_start: data.time_start || '',
-    time_end: data.time_end || '',
-    capacity: data.capacity || '',
-    is_remote_learning: data.is_remote_learning || '',
-    is_sheltered: data.is_sheltered || '',
-    board_count: data.boards.length || 0
-  };
 }
+
    
     function closeModal() {
       document.getElementById('editModalBackdrop').style.display = 'none';

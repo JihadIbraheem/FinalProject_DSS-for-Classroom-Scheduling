@@ -519,13 +519,16 @@ def logout():
 def get_schedule_details(schedule_id):
     cursor = db.cursor(dictionary=True)
     cursor.execute("""
-        SELECT s.*, c.classroom_num, c.capacity, c.is_remote_learning, c.is_sheltered,
-               cr.course_name, cr.lecturer_name
-        FROM schedules s
-        JOIN classrooms c ON s.classroom_id = c.classroom_id
-        JOIN courses cr ON s.course_id = cr.course_id
-        WHERE s.schedule_id = %s
-    """, (schedule_id,))
+    SELECT s.*, c.classroom_num, c.capacity, c.is_remote_learning, c.is_sheltered,
+           cr.course_name, cr.lecturer_name,
+           b.building_name
+                   FROM schedules s
+                   JOIN classrooms c ON s.classroom_id = c.classroom_id
+                   JOIN buildings b ON c.building_id = b.building_id
+                   JOIN courses cr ON s.course_id = cr.course_id
+                WHERE s.schedule_id = %s
+            """, (schedule_id,))
+
     schedule = cursor.fetchone()
 
     if not schedule:
