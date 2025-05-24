@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reports and Statistics</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f4f6f8;
+      margin: 0;
+      padding: 0;
+    }
+
+    header, footer {
+      background-color: #005792;
+      color: white;
+      padding: 15px;
+      text-align: center;
+    }
+
+    main {
+      padding: 30px;
+      max-width: 1300px;
+      margin: auto;
+    }
+
+    h2 {
+      color: #003d66;
+      margin-bottom: 20px;
+    }
+
+    .filter-group {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin-bottom: 30px;
+    }
+
+    .filter-group label {
+      font-weight: bold;
+    }
+
+    .chart-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      justify-content: space-between;
+    }
+
+    .chart-container {
+      flex: 1 1 48%;
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      min-width: 300px;
+    }
+
+    canvas {
+      width: 100% !important;
+      height: 350px !important;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SmartCampus Scheduler</h1>
+  </header>
+
+  <main>
+    <h2>Reports and Statistics</h2>
+
+    <!-- Filters -->
+    <div class="filter-group">
+      <div>
+        <label for="day">Day:</label>
+        <select id="day">
+          <option value="Sunday">Sunday</option>
+          <option value="Monday">Monday</option>
+          <option value="Tuesday">Tuesday</option>
+          <option value="Wednesday">Wednesday</option>
+          <option value="Thursday">Thursday</option>
+        </select>
+      </div>
+
+      <div>
+        <label for="hour">Hour:</label>
+        <select id="hour">
+          <option value="08:00">08:00</option>
+          <option value="10:00">10:00</option>
+          <option value="12:00">12:00</option>
+          <option value="14:00">14:00</option>
+          <option value="16:00">16:00</option>
+        </select>
+      </div>
+
+      <div>
+        <label for="building">Building:</label>
+        <select id="building">
+          <option value="Building A">Building A</option>
+          <option value="Building B">Building B</option>
+          <option value="Building C">Building C</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Side-by-Side Charts -->
+    <div class="chart-row">
+      <!-- Building Utilization -->
+      <div class="chart-container">
+        <h3>Building Utilization (%)</h3>
+        <canvas id="buildingChart"></canvas>
+      </div>
+
+      <!-- Classroom Utilization -->
+      <div class="chart-container">
+        <h3>Classroom Utilization in Selected Building (%)</h3>
+        <canvas id="classroomChart"></canvas>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <p>&copy; 2025 SmartCampus Scheduler</p>
+  </footer>
+
+  <script>
+    function getBuildingUtilization(day, hour) {
+      return {
+        labels: ['Building A', 'Building B', 'Building C'],
+        data: [75, 60, 90]
+      };
+    }
+
+    function getClassroomUtilization(day, hour, building) {
+      const buildings = {
+        'Building A': ['A101', 'A102', 'A103'],
+        'Building B': ['B201', 'B202', 'B203'],
+        'Building C': ['C301', 'C302', 'C303']
+      };
+
+      return {
+        labels: buildings[building],
+        data: buildings[building].map(() => Math.floor(Math.random() * 100))
+      };
+    }
+
+    const buildingCtx = document.getElementById('buildingChart').getContext('2d');
+    const classroomCtx = document.getElementById('classroomChart').getContext('2d');
+
+    let buildingChart = new Chart(buildingCtx, {
+      type: 'bar',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Utilization (%)',
+          data: [],
+          backgroundColor: '#4c9aff'
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: {
+            beginAtZero: true,
+            max: 100
+          }
+        }
+      }
+    });
+
+    let classroomChart = new Chart(classroomCtx, {
+      type: 'bar',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Utilization (%)',
+          data: [],
+          backgroundColor: '#ffa726'
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: {
+            beginAtZero: true,
+            max: 100
+          }
+        }
+      }
+    });
+
+    function updateCharts() {
+      const day = document.getElementById('day').value;
+      const hour = document.getElementById('hour').value;
+      const building = document.getElementById('building').value;
+
+      const buildingData = getBuildingUtilization(day, hour);
+      buildingChart.data.labels = buildingData.labels;
+      buildingChart.data.datasets[0].data = buildingData.data;
+      buildingChart.update();
+
+      const classroomData = getClassroomUtilization(day, hour, building);
+      classroomChart.data.labels = classroomData.labels;
+      classroomChart.data.datasets[0].data = classroomData.data;
+      classroomChart.update();
+    }
+
+    document.getElementById('day').addEventListener('change', updateCharts);
+    document.getElementById('hour').addEventListener('change', updateCharts);
+    document.getElementById('building').addEventListener('change', updateCharts);
+
+    updateCharts();
+  </script>
+</body>
+</html>
+
+

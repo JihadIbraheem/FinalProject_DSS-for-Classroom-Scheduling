@@ -18,10 +18,10 @@ app.static_folder = '../Frontend/src'
 app.secret_key = 'your_secret_key'
 
 db = mysql.connector.connect(
-    host="localhost",
-    port=3307,
+    host="127.0.0.1",
+    port=3306,
     user="root",
-    password="212165351Hala",
+    password="322858184ji",
     database="classroom_scheduling"
 )
 
