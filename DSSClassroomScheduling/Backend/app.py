@@ -18,10 +18,10 @@ app.static_folder = '../Frontend/src'
 app.secret_key = 'your_secret_key'
 
 db = mysql.connector.connect(
-    host="127.0.0.1",
-    port=3306,
+    host="localhost",
+    port=3307,
     user="root",
-    password="322858184ji",
+    password="212165351Hala",
     database="classroom_scheduling"
 )
 
@@ -695,7 +695,9 @@ def save_schedule_update():
             pass
         cursor.close()
 
-
+@app.route('/reports_statistics')
+def reports_schedule():
+    return render_template('reports_statistics.html')
 
 @app.route('/second_schedule')
 def second_schedule():
