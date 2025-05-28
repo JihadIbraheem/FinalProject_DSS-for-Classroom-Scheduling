@@ -702,6 +702,12 @@ def save_schedule_update():
 def reports_schedule():
     return render_template('reports_statistics.html')
 
+
+@app.route('/uploads/img/<building>/<room>/<filename>')
+def classroom_image(building, room, filename):
+    folder_path = os.path.join('uploads', 'img', building, room)
+    return send_from_directory(folder_path, filename)
+
 @app.route('/second_schedule')
 def second_schedule():
     return render_template('second_schedule.html')
