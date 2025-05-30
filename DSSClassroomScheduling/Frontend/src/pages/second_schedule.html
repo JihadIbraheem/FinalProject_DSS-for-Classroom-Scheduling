@@ -6,6 +6,49 @@
   <title>Visual Schedule</title>
   <link rel="stylesheet" href="/static/styles.css">
   <style>
+    .zoom-preview {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 9999;
+    max-width: 80%;
+    max-height: 80%;
+    border: 2px solid #ccc;
+    background: #fff;
+    display: none;
+  }
+  .zoom-preview img {
+    width: 100%;
+    height: auto;
+  }
+     .popup-img {
+    cursor: zoom-in;
+    transition: transform 0.2s;
+  }
+
+  .popup-overlay {
+    display: none;
+    position: fixed;
+    z-index: 9999;
+    top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    background-color: rgba(0, 0, 0, 0.7);
+    align-items: center;
+    justify-content: center;
+  }
+
+  .popup-overlay img {
+    max-width: 90vw;
+    max-height: 90vh;
+    border-radius: 10px;
+    box-shadow: 0 0 20px rgba(0,0,0,0.5);
+  }
+
+  .popup-overlay.active {
+    display: flex;
+  }
+
     /* RESET & BASE */
     * { box-sizing:border-box; margin:0; padding:0; font-family:'Poppins',sans-serif; }
     body { display:flex; flex-direction:column; min-height:100vh; background:#F3F4F6; color:#374151; }
@@ -299,6 +342,10 @@
     <h3>Select New Classroom</h3>
     <ul id="classroom-options-list"></ul>
   </div>
+</div>
+
+<div id="zoomContainer" class="zoom-preview">
+  <img id="zoomImage" src="" alt="Zoomed">
 </div>
 
 
@@ -602,29 +649,89 @@ async function submitEditModal() {
         const room = c.classroom_num.split('-').pop(); 
         const encodedBuilding = encodeURIComponent(c.building_name); 
         const imageDir = `/uploads/img/${encodedBuilding}/${room}`;
-        
-        let imageHtml = '';
-        for (let i = 1; i <= 5; i++) {  // נניח עד 5 תמונות מקסימום
-        imageHtml += `
-        <img src="${imageDir}/${i}.jpg" 
-         onerror="this.style.display='none'" 
-         alt="Classroom Image ${i}" 
-         style="width: 30%; max-height: 120px; object-fit: cover; border-radius: 6px;" />
-         `;
-        }
-        
-      li.innerHTML = `
+
+        let imagePaths = [];
+let loadCount = 0;
+
+const totalChecks = 5;
+let checkCount = 0;
+
+for (let i = 1; i <= totalChecks; i++) {
+  const path = `${imageDir}/${i}.jpg`;
+  const img = new Image();
+  img.onload = () => {
+    imagePaths.push(path);
+    checkCount++;
+    if (checkCount === totalChecks) {
+      renderImageGallery();
+    }
+  };
+  img.onerror = () => {
+    checkCount++;
+    if (checkCount === totalChecks) {
+      renderImageGallery();
+    }
+  };
+  img.src = path;
+}
+
+
+function renderImageGallery() {
+  imageHtml = imagePaths.map((src, idx) => `
+    <img src="${src}"
+         alt="Classroom Image ${idx + 1}"
+         class="popup-img"
+         style="width: 30%; max-height: 120px; object-fit: cover; border-radius: 6px;"
+         onclick='event.stopPropagation(); showGallery(${JSON.stringify(imagePaths)}, ${idx})' />
+  `).join('');
+
+  li.innerHTML = `
+    <div style="display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-bottom:8px;">
+      ${imageHtml}
+    </div>
+    <strong>Classroom:</strong> ${roomNumber}<br>
+    <strong>Building:</strong> ${c.building_name}<br>
+    <strong>Floor:</strong> ${floor}<br>
+    <strong>Capacity:</strong> ${c.capacity}<br>
+    <strong>Remote Learning:</strong> ${c.is_remote_learning}<br>
+    <strong>Sheltered:</strong> ${c.is_sheltered}<br>
+    <strong>Boards:</strong> ${c.board_count}
+  `;
+}
+
+
+
+        function renderImageGallery() {
+  if (imagePaths.length === 0) {
+    li.innerHTML = `
+      <div style="text-align:center; color:#888; margin-bottom:8px;">No images available</div>
+    `;
+  } else {
+    const imageHtml = imagePaths.map((src, idx) => `
+      <img src="${src}"
+           alt="Classroom Image ${idx + 1}"
+           class="popup-img"
+           style="width: 30%; max-height: 120px; object-fit: cover; border-radius: 6px;"
+           onclick='event.stopPropagation(); showGallery(${JSON.stringify(imagePaths)}, ${idx})' />
+    `).join('');
+
+    li.innerHTML = `
       <div style="display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-bottom:8px;">
         ${imageHtml}
-        </div>
-        <strong>Classroom:</strong> ${roomNumber}<br>
-        <strong>Building:</strong> ${c.building_name}<br>
-        <strong>Floor:</strong> ${floor}<br>
-        <strong>Capacity:</strong> ${c.capacity}<br>
-        <strong>Remote Learning:</strong> ${c.is_remote_learning}<br>
-        <strong>Sheltered:</strong> ${c.is_sheltered}<br>
-        <strong>Boards:</strong> ${c.board_count}
-        `;
+      </div>
+      <strong>Classroom:</strong> ${roomNumber}<br>
+      <strong>Building:</strong> ${c.building_name}<br>
+      <strong>Floor:</strong> ${floor}<br>
+      <strong>Capacity:</strong> ${c.capacity}<br>
+      <strong>Remote Learning:</strong> ${c.is_remote_learning}<br>
+      <strong>Sheltered:</strong> ${c.is_sheltered}<br>
+      <strong>Boards:</strong> ${c.board_count}
+    `;
+  }
+
+  list.appendChild(li);
+}
+
 
 
         li.style.cursor = 'pointer';
@@ -635,19 +742,23 @@ async function submitEditModal() {
         li.onmouseenter = () => li.style.backgroundColor = '#eee';
         li.onmouseleave = () => li.style.backgroundColor = 'white';
 
-        li.onclick = async () => {
+        li.onclick = async (event) => {
+          if (event.target.tagName === 'IMG') return;  // התעלמות מלחיצה על תמונה
+          
           if (!confirm(`Are you sure you want to switch to classroom ${c.classroom_num}?`)) return;
-
+          
           data.selected_classroom_num = c.classroom_num;
           modal.style.display = 'none';
-
+          
+          
           const res2 = await fetch('/api/save_schedule_update', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
           });
-
+          
           const result2 = await res2.json();
+          
           if (result2.success) {
             alert("Update successful");
             closeModal();
@@ -656,6 +767,7 @@ async function submitEditModal() {
             alert("Update failed: " + result2.message);
           }
         };
+
 
         list.appendChild(li);
       });
@@ -675,6 +787,17 @@ async function submitEditModal() {
   }
 }
 
+function showZoom(src) {
+    const zoom = document.getElementById("zoomContainer");
+    const img = document.getElementById("zoomImage");
+    img.src = src;
+    zoom.style.display = "block";
+  }
+
+  function hideZoom() {
+    document.getElementById("zoomContainer").style.display = "none";
+  }
+
 async function editRow(schedule_id) {
   const res = await fetch(`/api/schedule_details/${schedule_id}`);
   const data = await res.json();
@@ -683,6 +806,28 @@ async function editRow(schedule_id) {
   document.getElementById('modal-current-classroom').value = (data.classroom_num || '').split('-').pop();  
   document.getElementById('modal-building-name').value = data.building_name || '';
   document.getElementById('modal-classroom').value = data.classroom_num || '';  
+  // יצירת הצגת תמונות מתוך data.images
+  const imgContainer = document.createElement('div');
+  imgContainer.style.display = 'flex';
+  imgContainer.style.flexWrap = 'wrap';
+  imgContainer.style.gap = '8px';
+  imgContainer.style.marginTop = '12px';
+  
+  (data.images || []).forEach(src => {
+  const img = document.createElement('img');
+  img.src = src;
+  img.alt = 'Classroom Image';
+  img.style.width = '30%';
+  img.style.maxHeight = '120px';
+  img.style.objectFit = 'cover';
+  img.style.borderRadius = '6px';
+  imgContainer.appendChild(img);
+  });
+
+// הוסף לאלמנט ה-modal במקום מתאים (נניח לפני כפתור עדכון)
+const modal = document.querySelector('#editModalBackdrop .modal');
+modal.appendChild(imgContainer);
+
   document.getElementById('modal-course-name').value = data.course_name || '';
   document.getElementById('modal-lecturer').value = data.lecturer_name || '';
   document.getElementById('modal-weekday').value = data.weekday || '';
@@ -737,7 +882,148 @@ async function editRow(schedule_id) {
   renderCalendarView(json.schedules || json);
 }
 
+function showPopup(src) {
+  const popup = document.getElementById('imagePopup');
+  const popupImg = document.getElementById('popupImage');
+  popupImg.src = src;
+  popup.classList.add('active');
+}
+
+function hidePopup() {
+  document.getElementById('imagePopup').classList.remove('active');
+}
+
+let currentImageIndex = 0;
+let galleryImages = [];
+
+function showGallery(images, startIndex = 0) {
+  galleryImages = images;
+  currentImageIndex = startIndex;
+  const overlay = document.getElementById('imageGalleryOverlay');
+  const imgTag = document.getElementById('galleryImage');
+  imgTag.src = galleryImages[currentImageIndex];
+  overlay.style.display = 'flex';
+}
+
+function nextImage() {
+  currentImageIndex = (currentImageIndex + 1) % galleryImages.length;
+  document.getElementById('galleryImage').src = galleryImages[currentImageIndex];
+}
+
+function prevImage() {
+  currentImageIndex = (currentImageIndex - 1 + galleryImages.length) % galleryImages.length;
+  document.getElementById('galleryImage').src = galleryImages[currentImageIndex];
+}
+
+function closeGallery() {
+  document.getElementById('imageGalleryOverlay').style.display = 'none';
+}
+
   </script>
+
+<div id="imagePopup" class="popup-overlay" onclick="hidePopup()">
+  <img id="popupImage" src="" alt="Enlarged Image" />
+</div>
+
+
+<!-- גלריית תמונות קופצת -->
+<div id="imageGalleryOverlay" class="popup-overlay" style="
+  display: none;
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.8);
+  z-index: 9990;
+  justify-content: center;
+  align-items: center;
+" onclick="closeGallery()">
+
+  <div id="galleryInner" style="
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    max-width: 90vw;
+    max-height: 90vh;
+    margin: auto;
+  " onclick="event.stopPropagation()">
+
+    <!-- כפתור סגירה -->
+    <span onclick="closeGallery()" style="
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      font-size: 28px;
+      color: white;
+      background: rgba(0, 0, 0, 0.7);
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-weight: bold;
+      z-index: 10001;
+    " title="Close">×</span>
+
+    <!-- חץ אחורה -->
+    <button onclick="event.stopPropagation(); prevImage()" style="
+      position: absolute;
+      left: -60px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 28px;
+      color: white;
+      background: rgba(0, 0, 0, 0.6);
+      border: none;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 9999;
+    " title="Previous">❮</button>
+
+    <!-- התמונה -->
+    <img id="galleryImage" style="
+      max-width: 80vw;
+      max-height: 80vh;
+      border-radius: 12px;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.6);
+      z-index: 9998;
+    " />
+
+    <!-- חץ קדימה -->
+    <button onclick="event.stopPropagation(); nextImage()" style="
+      position: absolute;
+      right: -60px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 28px;
+      color: white;
+      background: rgba(0, 0, 0, 0.6);
+      border: none;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 9999;
+    " title="Next">❯</button>
+
+  </div>
+</div>
+
+
+
+
 
   <footer>
     <p>&copy; 2025 Classroom Scheduling System</p>

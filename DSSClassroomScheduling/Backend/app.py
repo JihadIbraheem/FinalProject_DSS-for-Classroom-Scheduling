@@ -514,7 +514,6 @@ def logout():
     flash('Logged out successfully!')
     return redirect(url_for('login'))
 
-
 @app.route('/api/schedule_details/<int:schedule_id>')
 def get_schedule_details(schedule_id):
     cursor = db.cursor(dictionary=True)
@@ -522,12 +521,12 @@ def get_schedule_details(schedule_id):
     SELECT s.*, c.classroom_num, c.capacity, c.is_remote_learning, c.is_sheltered,
            cr.course_name, cr.lecturer_name,
            b.building_name
-                   FROM schedules s
-                   JOIN classrooms c ON s.classroom_id = c.classroom_id
-                   JOIN buildings b ON c.building_id = b.building_id
-                   JOIN courses cr ON s.course_id = cr.course_id
-                WHERE s.schedule_id = %s
-            """, (schedule_id,))
+           FROM schedules s
+           JOIN classrooms c ON s.classroom_id = c.classroom_id
+           JOIN buildings b ON c.building_id = b.building_id
+           JOIN courses cr ON s.course_id = cr.course_id
+           WHERE s.schedule_id = %s
+    """, (schedule_id,))
 
     schedule = cursor.fetchone()
 
@@ -548,6 +547,28 @@ def get_schedule_details(schedule_id):
             schedule[key] = str(val)
         elif val is None:
             schedule[key] = ""
+
+    # הוספת רשימת תמונות
+    image_dir = os.path.join('uploads', 'img', schedule['building_name'], schedule['classroom_num'])
+    images = []
+    if os.path.exists(image_dir):
+        for filename in sorted(os.listdir(image_dir)):
+            if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
+                encoded_building = schedule['building_name'].replace(" ", "%20")
+                img_path = f"/uploads/img/{encoded_building}/{schedule['classroom_num']}/{filename}"
+                images.append(img_path)
+    schedule['images'] = images
+    
+    classroom_num = schedule['classroom_num'].split('-')[-1]
+    building_name = schedule['building_name']
+    base_path = os.path.join('uploads', 'img', building_name, classroom_num)
+    
+    image_urls = []
+    if os.path.exists(base_path):
+        for filename in sorted(os.listdir(base_path)):
+            if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+                image_urls.append(f'/uploads/img/{building_name}/{classroom_num}/{filename}')
+                schedule['images'] = image_urls
 
     return jsonify(schedule)
 
