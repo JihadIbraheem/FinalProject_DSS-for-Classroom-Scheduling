@@ -29,6 +29,133 @@ db = mysql.connector.connect(
 def default_home():
     return redirect(url_for('login'))
 
+@app.route('/manual_schedule', methods=['POST'])
+def manual_schedule():
+    if is_data_existing():
+        flash("Please delete existing data before adding new schedule manually.")
+        return redirect(url_for('upload'))
+
+    course_names = request.form.getlist('course_name[]')
+    lecturer_names = request.form.getlist('lecturer_name[]')
+    capacities = request.form.getlist('students_num[]')
+    remote_flags = request.form.getlist('is_remote_learning[]')
+    sheltered_flags = request.form.getlist('is_sheltered[]')
+    course_ids = request.form.getlist('course_id[]')
+    weekdays = request.form.getlist('weekday[]')
+    durations = request.form.getlist('duration[]')
+
+    if not (course_names and lecturer_names and capacities):
+        flash("Missing course data.")
+        return redirect(url_for('upload'))
+
+    # מפת ימים עם גרש כפי שנדרש בתצוגות אחרות
+    WEEKDAY_MAP = {
+        "א": "א'",
+        "ב": "ב'",
+        "ג": "ג'",
+        "ד": "ד'",
+        "ה": "ה'",
+        "ו": "ו'"
+    }
+
+    cursor = db.cursor()
+
+    for i in range(len(course_names)):
+        course_id = course_ids[i] if course_ids[i] else f"auto_{i+1}"
+        course_name = course_names[i]
+        lecturer_name = lecturer_names[i]
+        students_num = int(capacities[i])
+        is_remote = remote_flags[i]
+        is_sheltered = sheltered_flags[i]
+
+        raw_day = weekdays[i].strip() if weekdays[i] else 'א'
+        preferred_day = WEEKDAY_MAP.get(raw_day, raw_day)
+
+        duration_hours = float(durations[i])
+        duration_minutes = int(duration_hours * 60)
+
+        try:
+            cursor.execute("""
+                INSERT INTO courses (course_id, course_name, students_num, lecturer_name)
+                VALUES (%s, %s, %s, %s)
+            """, (course_id, course_name, students_num, lecturer_name))
+        except Exception as e:
+            flash(f"⚠️ Failed to insert course '{course_name}': {e}")
+            continue
+
+        def try_schedule_with_classrooms(classroom_query, allow_relaxation=False):
+            for classroom in classroom_query:
+                classroom_id = classroom[0]
+
+                cursor.execute("""
+                    SELECT time_start, time_end FROM schedules
+                    WHERE classroom_id = %s AND weekday = %s
+                    ORDER BY time_start
+                """, (classroom_id, preferred_day))
+                busy_times = cursor.fetchall()
+
+                current_time = datetime.strptime("08:00:00", "%H:%M:%S")
+                end_of_day = datetime.strptime("18:00:00", "%H:%M:%S")
+
+                for bt in busy_times + [(end_of_day.time(), end_of_day.time())]:
+                    next_start = datetime.strptime(str(bt[0]), "%H:%M:%S")
+                    potential_end = current_time + timedelta(minutes=duration_minutes)
+
+                    if potential_end <= next_start:
+                        cursor.execute("""
+                            INSERT INTO schedules (classroom_id, course_id, weekday, time_start, time_end)
+                            VALUES (%s, %s, %s, %s, %s)
+                        """, (
+                            classroom_id,
+                            course_id,
+                            preferred_day,
+                            current_time.time(),
+                            potential_end.time()
+                        ))
+                        return True, classroom_id
+
+                    current_time = datetime.strptime(str(bt[1]), "%H:%M:%S")
+            return False, None
+
+        # Try strict constraints
+        cursor.execute("""
+            SELECT classroom_id FROM classrooms
+            WHERE capacity >= %s AND is_remote_learning = %s AND is_sheltered = %s
+            ORDER BY capacity ASC
+        """, (students_num, is_remote, is_sheltered))
+        classrooms = cursor.fetchall()
+        scheduled, classroom_used = try_schedule_with_classrooms(classrooms)
+
+        # Try relaxed constraints
+        if not scheduled:
+            cursor.execute("""
+                SELECT classroom_id, capacity, is_remote_learning, is_sheltered FROM classrooms
+                WHERE capacity >= %s
+                ORDER BY capacity ASC
+            """, (students_num,))
+            relaxed_classrooms = cursor.fetchall()
+            scheduled, classroom_used = try_schedule_with_classrooms([(c[0],) for c in relaxed_classrooms], allow_relaxation=True)
+
+            if scheduled:
+                for c in relaxed_classrooms:
+                    if c[0] == classroom_used:
+                        mismatches = []
+                        if str(c[2]) != str(is_remote):
+                            mismatches.append("remote learning mismatch")
+                        if str(c[3]) != str(is_sheltered):
+                            mismatches.append("sheltered room mismatch")
+                        msg = f"⚠️ Course '{course_name}' was scheduled in a non-ideal classroom: {', '.join(mismatches)}."
+                        flash(msg)
+                        break
+            else:
+                flash(f"❌ No classroom found for '{course_name}' on {preferred_day}.")
+
+    db.commit()
+    cursor.close()
+    flash("📅 Manual scheduling completed.")
+    return redirect(url_for('home'))
+
+
 def is_data_existing():
     cursor = db.cursor()
     cursor.execute("SELECT COUNT(*) FROM schedules")
@@ -316,8 +443,8 @@ def add_user():
         last_name = request.form['last_name']
         email = request.form['email']
         password = request.form['password']
-        role = request.form['role']
-        permissions = request.form['permissions']
+        role = 'admin'
+        permissions = 'standard'  
 
         try:
             cursor = db.cursor()
@@ -438,7 +565,7 @@ def api_schedules():
             elif isinstance(val, time):
                 row[key] = val.strftime("%H:%M")
             elif isinstance(val, timedelta):
-                row[key] = str(val)  # המרה של timedelta למחרוזת
+                row[key] = str(val)  
             elif val is None:
                 row[key] = ""
 

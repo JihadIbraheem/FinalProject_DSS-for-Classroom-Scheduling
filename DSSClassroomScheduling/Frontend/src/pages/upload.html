@@ -53,6 +53,22 @@
       position:absolute; top:0; left:0; width:100%; height:100%;
       opacity:0; cursor:pointer;
     }
+    .add-course-btn {
+   padding: 0.6rem 1rem;
+   background-color: #E5E7EB;
+   border: none;
+   border-radius: 0.5rem;
+   font-weight: 600;
+   cursor: pointer;
+   transition: background-color 0.3s ease, transform 0.2s ease;
+   margin-bottom: 1rem;
+   }
+
+    .add-course-btn:hover {
+  background-color: #D1D5DB;
+  transform: translateY(-1px);
+   }
+
     .upload-area svg {
       width:48px; height:48px; fill:#60A5FA; margin-bottom:0.5rem;
     }
@@ -68,6 +84,26 @@
       font-weight:600; border-radius:0.5rem;
       transition:background .3s, transform .2s;
     }
+    .mode-toggle-btn {
+    flex: 1;
+    padding: 0.75rem;
+    border: none;
+    border-radius: 0.5rem;
+    background-color: #E5E7EB;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+    }
+    
+    .mode-toggle-btn:hover {
+  background-color: #D1D5DB;
+  transform: translateY(-1px);
+  }
+  .mode-toggle-btn.active {
+  background-color: #1E3A8A;
+  color: white;
+  }
+
     .btn-primary {
       background:#1E3A8A; color:#fff; border:none;
     }
@@ -98,47 +134,174 @@
   <header>
     <h1><a href="/home" class="home-link">Classroom Scheduling System</a></h1>
   </header>
+<main>
+  <div class="card">
+    <h2>Upload or Add Schedule</h2>
+    <div id="upload-info-icon" style="text-align: right; position: relative; margin-bottom: 10px;">
+  <span onmouseover="showTooltip()" onmouseout="hideTooltip()" style="cursor: help; font-weight: bold; font-size: 20px;">ⓘ</span>
+  <div id="tooltip" style="
+    display: none;
+    position: absolute;
+    right: 0;
+    top: 24px;
+    background: #fff;
+    border: 1px solid #ccc;
+    padding: 10px;
+    width: 320px;
+    font-size: 13px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    border-radius: 6px;
+    z-index: 1000;
+  ">
+    <strong>File Requirements:</strong><br>
+    • Must be Excel (.xlsx)<br>
+    • Required columns:<br> <code>יום, חדר, בניין, קיבולת, 08:00 - 09:00, 09:00 - 10:00, .. , 21:00 - 22:00</code><br>
+    • Course format inside cells: <code>203.123(30)[Dr. Smith]{Intro to CS}</code>
+  </div>
+  </div>
 
-  <main>
-    <div class="card">
-      <h2>Upload New Schedule</h2>
 
-      <!-- Drag & Drop File Upload -->
-      <form action="/upload" method="POST" enctype="multipart/form-data">
-        <div class="upload-area">
-          <!-- Optional SVG icon -->
-          <svg viewBox="0 0 24 24">
-            <path d="M12 16l4-5h-3V4h-2v7H8l4 5zm8-1v5H4v-5H2v5a2 2 0 002 2h16a2 2 0 002-2v-5h-2z"/>
-          </svg>
-          <p>Drag &amp; drop your Excel file here<br>or click to browse</p>
-          <input type="file" name="file" accept=".xls,.xlsx" required>
-        </div>
-        <button type="submit" class="btn btn-primary">Upload Schedule</button>
-      </form>
+    <!-- כפתורי בחירה -->
+   <div style="display:flex; gap:1rem; margin-bottom:1rem;">
+    <button type="button" class="mode-toggle-btn active" id="uploadBtn" onclick="showUploadForm()">Upload File</button>
+    <button type="button" class="mode-toggle-btn" id="manualBtn" onclick="showManualForm()">Manual Entry</button>
+   </div>
 
-      <!-- Delete Data -->
-      <form action="/delete_data" method="POST" onsubmit="return confirm('Are you sure you want to delete all existing data?');">
-        <button type="submit" class="btn btn-danger">Delete Existing Data</button>
-      </form>
 
-      <!-- Flash Messages -->
-      {% with messages = get_flashed_messages() %}
-        {% if messages %}
-          <div class="flash">
-            <ul>
-              {% for msg in messages %}
-                <li>{{ msg }}</li>
-              {% endfor %}
-            </ul>
-          </div>
-        {% endif %}
-      {% endwith %}
-    </div>
-  </main>
+    <!-- טופס העלאת קובץ -->
+    <form id="upload-form" action="/upload" method="POST" enctype="multipart/form-data">
+      <div class="upload-area">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 16l4-5h-3V4h-2v7H8l4 5zm8-1v5H4v-5H2v5a2 2 0 002 2h16a2 2 0 002-2v-5h-2z"/>
+        </svg>
+        <p>Drag & drop your Excel file here<br>or click to browse</p>
+        <input type="file" name="file" accept=".xls,.xlsx" required>
+      </div>
+      <button type="submit" class="btn btn-primary">Upload Schedule</button>
+    </form>
+
+    <!-- טופס הזנה ידנית -->
+    <form id="manual-form" action="/manual_schedule" method="POST" style="display:none;">
+      <div id="manual-container"></div>
+      <button type="button" class="add-course-btn" onclick="addManualRow()">+ Add Course</button>
+      <button type="submit" class="btn btn-primary" style="margin-top:1rem;">Auto-Schedule</button>
+    </form>
+
+    <!-- כפתור מחיקה -->
+    <form action="/delete_data" method="post" onsubmit="return confirm('Are you sure you want to delete all existing data? This action cannot be undone!')">
+      <button class="btn btn-danger" type="submit">🗑️ Delete Existing Data</button>
+    </form>
+
+  </div>
+</main>
+
 
   <footer>
     &copy; 2025 Classroom Scheduling System
   </footer>
+<script>
+function showUploadForm() {
+  document.getElementById("upload-form").style.display = "block";
+  document.getElementById("manual-form").style.display = "none";
+  document.getElementById("upload-info-icon").style.display = "block";
+  document.getElementById("uploadBtn").classList.add("active");
+  document.getElementById("manualBtn").classList.remove("active");
+}
+
+function showManualForm() {
+  document.getElementById("upload-form").style.display = "none";
+  document.getElementById("manual-form").style.display = "block";
+  document.getElementById("upload-info-icon").style.display = "none";
+  document.getElementById("uploadBtn").classList.remove("active");
+  document.getElementById("manualBtn").classList.add("active");
+}
+
+
+function addManualRow() {
+  const container = document.getElementById("manual-container");
+  const div = document.createElement("div");
+  div.className = "manual-row";
+  div.style.padding = "1rem";
+  div.style.marginBottom = "1rem";
+  div.style.border = "1px solid #ccc";
+  div.style.borderRadius = "0.5rem";
+  div.style.background = "#f9f9f9";
+
+  div.innerHTML = `
+    <div style="margin-bottom: 0.5rem;">
+      <label>Course Number:</label>
+      <input type="text" name="course_id[]" required style="width: 100%;">
+    </div>
+    <div style="margin-bottom: 0.5rem;">
+      <label>Course Name:</label>
+      <input type="text" name="course_name[]" required style="width: 100%;">
+    </div>
+    <div style="margin-bottom: 0.5rem;">
+      <label>Lecturer Name:</label>
+      <input type="text" name="lecturer_name[]" required style="width: 100%;">
+    </div>
+    <div style="margin-bottom: 0.5rem;">
+      <label>Number of Students:</label>
+      <input type="number" name="students_num[]" required style="width: 100%;">
+    </div>
+    <div style="margin-bottom: 0.5rem;">
+      <label>Duration (hours):</label>
+      <input type="number" name="duration[]" min="0.5" max="5" step="0.5" required style="width: 100%;">
+      </div>
+    <div style="margin-bottom: 0.5rem;">
+      <label>Preferred Weekday:</label>
+      <select name="weekday[]" style="width: 100%;">
+        <option value="">No Preference</option>
+        <option value="א">א</option>
+        <option value="ב">ב</option>
+        <option value="ג">ג</option>
+        <option value="ד">ד</option>
+        <option value="ה">ה</option>
+        <option value="ו">ו</option>
+      </select>
+    </div>
+    <div style="margin-bottom: 0.5rem;">
+      <label>Remote Learning:</label>
+      <select name="is_remote_learning[]" style="width: 100%;">
+        <option value="no">Just hybrid</option>
+        <option value="yes">Remote</option>
+      </select>
+    </div>
+    <div>
+      <label>Sheltered Room:</label>
+      <select name="is_sheltered[]" style="width: 100%;">
+        <option value="no">Not Sheltered</option>
+        <option value="yes">Sheltered</option>
+      </select>
+    </div>
+  `;
+
+  container.appendChild(div);
+}
+  window.onload = () => {
+    if (document.getElementById("manual-form").style.display !== "none") {
+      addManualRow();
+    }
+  };
+  window.onload = () => {
+  if (document.getElementById("manual-form").style.display !== "none") {
+    addManualRow();
+    document.getElementById("upload-info-icon").style.display = "none";
+  } else {
+    document.getElementById("upload-info-icon").style.display = "block";
+  }
+};
+
+
+  function showTooltip() {
+  document.getElementById('tooltip').style.display = 'block';
+}
+function hideTooltip() {
+  document.getElementById('tooltip').style.display = 'none';
+}
+
+
+</script>
 
 </body>
 </html>
