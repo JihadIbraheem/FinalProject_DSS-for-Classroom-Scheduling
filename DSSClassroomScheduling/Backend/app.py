@@ -48,7 +48,6 @@ def manual_schedule():
         flash("Missing course data.")
         return redirect(url_for('upload'))
 
-    # מפת ימים עם גרש כפי שנדרש בתצוגות אחרות
     WEEKDAY_MAP = {
         "א": "א'",
         "ב": "ב'",
@@ -58,7 +57,7 @@ def manual_schedule():
         "ו": "ו'"
     }
 
-    cursor = db.cursor()
+    cursor = db.cursor(buffered=True)  
 
     for i in range(len(course_names)):
         course_id = course_ids[i] if course_ids[i] else f"auto_{i+1}"
@@ -117,7 +116,6 @@ def manual_schedule():
                     current_time = datetime.strptime(str(bt[1]), "%H:%M:%S")
             return False, None
 
-        # Try strict constraints
         cursor.execute("""
             SELECT classroom_id FROM classrooms
             WHERE capacity >= %s AND is_remote_learning = %s AND is_sheltered = %s
@@ -126,7 +124,6 @@ def manual_schedule():
         classrooms = cursor.fetchall()
         scheduled, classroom_used = try_schedule_with_classrooms(classrooms)
 
-        # Try relaxed constraints
         if not scheduled:
             cursor.execute("""
                 SELECT classroom_id, capacity, is_remote_learning, is_sheltered FROM classrooms
@@ -155,32 +152,34 @@ def manual_schedule():
     flash("📅 Manual scheduling completed.")
     return redirect(url_for('home'))
 
-
 def is_data_existing():
-    cursor = db.cursor()
-    cursor.execute("SELECT COUNT(*) FROM schedules")
-    result = cursor.fetchone()[0]
-    cursor.close()
-    return result > 0
+    with db.cursor(buffered=True) as cursor:  
+        cursor.execute("SELECT COUNT(*) FROM schedules")
+        result = cursor.fetchone()
+        return result[0] > 0
+
 
 def delete_existing_data():
-    cursor = db.cursor()
-    cursor.execute("DELETE FROM schedules")
-    cursor.execute("DELETE FROM courses")
-    db.commit()
-    cursor.close()
+    with db.cursor(buffered=True) as cursor:  
+        cursor.execute("DELETE FROM schedules")
+        cursor.execute("DELETE FROM courses")
+        db.commit()
 
 
 def extract_course_id(text):
     match = re.search(r'\d{4}-\d{2}', text)
     return match.group(0) if match else '0000-00'
 
+
 def extract_course_details(text):
-    match = re.search(r"(?P<course_id>.*?)\(\s*(?P<students_num>\d+)\)\[(?P<lecturer_name>.*?)\]\{(?P<course_name>.*?)\}", str(text))
+    match = re.search(
+        r"(?P<course_id>.*?)\(\s*(?P<students_num>\d+)\)\[(?P<lecturer_name>.*?)\]\{(?P<course_name>.*?)\}",
+        str(text)
+    )
     if match:
         data = match.groupdict()
         if data['course_id'].startswith(('א-', 'ב-', 'ג-', 'ד-', 'ה-', 'ו-', 'ש-')):
-            data['course_id'] = data['course_id'][2:]  # הסר את שני התווים הראשונים
+            data['course_id'] = data['course_id'][2:]  # הסרת קידומת יום
         return data
     return None
 
@@ -277,85 +276,82 @@ def merge_continuous_schedules(df):
 
     return pd.DataFrame(merged)
 
-
 def insert_data_to_db(data):
-    cursor = db.cursor()
     failed_rows = []
 
-    for idx, row in data.iterrows():
-        # חיפוש classroom_id לפי classroom_num
-        try:
-            classroom_number = str(row['classroom_id']).strip()
-            cursor.execute("SELECT classroom_id FROM classrooms WHERE classroom_num = %s", (classroom_number,))
-            result = cursor.fetchone()
-            if result:
-                classroom_id = result[0]
-            else:
-                failed_rows.append((idx + 1, f"Classroom number '{classroom_number}' not found in database."))
+    with db.cursor() as cursor:
+        for idx, row in data.iterrows():
+            # חיפוש classroom_id לפי classroom_num
+            try:
+                classroom_number = str(row['classroom_id']).strip()
+                cursor.execute("SELECT classroom_id FROM classrooms WHERE classroom_num = %s", (classroom_number,))
+                result = cursor.fetchone()
+                if result:
+                    classroom_id = result[0]
+                else:
+                    failed_rows.append((idx + 1, f"Classroom number '{classroom_number}' not found in database."))
+                    continue
+            except Exception as e:
+                failed_rows.append((idx + 1, f"Error fetching classroom_id: {e}"))
                 continue
-        except Exception as e:
-            failed_rows.append((idx + 1, f"Error fetching classroom_id: {e}"))
-            continue
 
-        # שמירה של course_id כמות שהוא
-        course_id = row['course_id']
+            # שמירה של course_id כמות שהוא
+            course_id = row['course_id']
 
+            # עיבוד זמנים
+            try:
+                time_start_cleaned = re.sub(r'[^\d:]', '', str(row['time_start']))
+                time_end_cleaned = re.sub(r'[^\d:]', '', str(row['time_end']))
+                time_start = datetime.strptime(time_start_cleaned, "%H:%M:%S").time()
+                time_end = datetime.strptime(time_end_cleaned, "%H:%M:%S").time()
+            except Exception as e:
+                failed_rows.append((idx + 1, f"Invalid time format: {e}"))
+                continue
 
-        # עיבוד זמנים
-        try:
-            time_start_cleaned = re.sub(r'[^\d:]', '', str(row['time_start']))
-            time_end_cleaned = re.sub(r'[^\d:]', '', str(row['time_end']))
+            # הכנסת הנתונים לטבלה schedules
+            try:
+                cursor.execute("""
+                    INSERT INTO schedules (classroom_id, course_id, weekday, time_start, time_end)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (
+                    classroom_id,
+                    course_id,
+                    row['weekday'],
+                    time_start,
+                    time_end
+                ))
+            except Exception as e:
+                failed_rows.append((idx + 1, str(e)))
 
-
-            time_start = datetime.strptime(time_start_cleaned, "%H:%M:%S").time()
-            time_end = datetime.strptime(time_end_cleaned, "%H:%M:%S").time()
-        except Exception as e:
-            failed_rows.append((idx + 1, f"Invalid time format: {e}"))
-            continue
-
-        # הכנסת הנתונים לטבלה schedules
-        try:
-            cursor.execute("""
-                           INSERT INTO schedules (classroom_id, course_id, weekday, time_start, time_end)
-                           VALUES (%s, %s, %s, %s, %s)
-                           """, (
-                               classroom_id,
-                               course_id,
-                               row['weekday'],
-                               time_start,
-                               time_end
-                               ))
-        except Exception as e:
-            failed_rows.append((idx + 1, str(e)))
+        db.commit()
 
     print(f"Rows prepared for insert: {len(data)}")
     print(f"Total inserted: {len(data) - len(failed_rows)}")
     print(f"Failed rows: {failed_rows}")
-    db.commit()
-    cursor.close()
 
     if failed_rows:
         message = f"{len(failed_rows)} rows failed to insert. Check terminal for details."
         raise Exception(message)
 
+
 def insert_courses_to_db(courses_df):
-    cursor = db.cursor()
-    for _, row in courses_df.iterrows():
-        try:
-            cursor.execute("""
-                INSERT INTO courses (course_id, course_name, students_num, lecturer_name)
-                VALUES (%s, %s, %s, %s)
-            """, (
-                row['course_id'],
-                row['course_name'],
-                row['students_num'],
-                row['lecturer_name']
-            ))
-        except Exception as e:
-            print(f"Failed to insert course {row['course_id']}: {e}")
-            continue
-    db.commit()
-    cursor.close()
+    with db.cursor() as cursor:
+        for _, row in courses_df.iterrows():
+            try:
+                cursor.execute("""
+                    INSERT INTO courses (course_id, course_name, students_num, lecturer_name)
+                    VALUES (%s, %s, %s, %s)
+                """, (
+                    row['course_id'],
+                    row['course_name'],
+                    row['students_num'],
+                    row['lecturer_name']
+                ))
+            except Exception as e:
+                print(f"Failed to insert course {row['course_id']}: {e}")
+                continue
+        db.commit()
+
 
 @app.route('/uploads/<path:filename>')
 def uploaded_file(filename):
@@ -387,6 +383,7 @@ def upload():
 
     return render_template('upload.html')
 
+
 @app.route('/delete_data', methods=['POST'])
 def delete_data():
     if not is_data_existing():
@@ -397,9 +394,11 @@ def delete_data():
     flash('Existing data deleted successfully!')
     return redirect(url_for('upload'))
 
+
 @app.route('/home')
 def home():
     return render_template('home.html')
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -407,10 +406,10 @@ def login():
         username = request.form['username'].strip()
         password = request.form['password'].strip()
 
-        cursor = db.cursor(dictionary=True)
-        query = "SELECT * FROM users WHERE first_name = %s AND password = %s"
-        cursor.execute(query, (username, password))
-        user = cursor.fetchone()
+        with db.cursor(dictionary=True, buffered=True) as cursor:
+            query = "SELECT * FROM users WHERE first_name = %s AND password = %s"
+            cursor.execute(query, (username, password))
+            user = cursor.fetchone()
 
         if user:
             session['user_id'] = user['user_id']
@@ -421,6 +420,7 @@ def login():
             return redirect(url_for('login'))
 
     return render_template('login.html')
+
 
 @app.route('/request_schedule', methods=['GET', 'POST'])
 def request_schedule():
@@ -444,22 +444,22 @@ def add_user():
         email = request.form['email']
         password = request.form['password']
         role = 'admin'
-        permissions = 'standard'  
+        permissions = 'standard'
 
         try:
-            cursor = db.cursor()
-            cursor.execute("""
-                INSERT INTO users (first_name, last_name, email, password, role, permissions)
-                VALUES (%s, %s, %s, %s, %s, %s)
-            """, (first_name, last_name, email, password, role, permissions))
-            db.commit()
-            cursor.close()
+            with db.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO users (first_name, last_name, email, password, role, permissions)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (first_name, last_name, email, password, role, permissions))
+                db.commit()
             flash('User added successfully!')
         except Exception as e:
             flash(f'Error adding user: {e}')
         return redirect(url_for('home'))
-    
+
     return render_template('add_user.html')
+
 
 @app.route('/api/update_schedule_fields', methods=['POST'])
 def update_schedule_fields():
@@ -471,91 +471,90 @@ def update_schedule_fields():
     lecturer_name = data['lecturer_name']
     classroom_num = data['classroom_num']
 
-    cursor = db.cursor(dictionary=True)
+    try:
+        with db.cursor(dictionary=True) as cursor:
+            # שליפת classroom_id
+            cursor.execute("SELECT classroom_id FROM classrooms WHERE classroom_num = %s", (classroom_num,))
+            classroom = cursor.fetchone()
+            if not classroom:
+                return jsonify(success=False, message="Classroom not found")
+            classroom_id = classroom['classroom_id']
 
-    # שליפת classroom_id
-    cursor.execute("SELECT classroom_id FROM classrooms WHERE classroom_num = %s", (classroom_num,))
-    classroom = cursor.fetchone()
-    if not classroom:
-        return jsonify(success=False, message="Classroom not found")
-    classroom_id = classroom['classroom_id']
+            # שליפת course_id כדי לזהות את המרצה
+            cursor.execute("SELECT course_id FROM schedules WHERE schedule_id = %s", (schedule_id,))
+            course = cursor.fetchone()
+            if not course:
+                return jsonify(success=False, message="Course not found")
+            course_id = course['course_id']
 
-    # שליפת course_id כדי לזהות את המרצה
-    cursor.execute("SELECT course_id FROM schedules WHERE schedule_id = %s", (schedule_id,))
-    course = cursor.fetchone()
-    if not course:
-        return jsonify(success=False, message="Course not found")
-    course_id = course['course_id']
+            # בדיקה של התנגשות בכיתה
+            cursor.execute("""
+                SELECT * FROM schedules
+                WHERE schedule_id != %s
+                  AND classroom_id = %s
+                  AND weekday = %s
+                  AND (
+                    (time_start <= %s AND time_end > %s) OR
+                    (time_start < %s AND time_end >= %s) OR
+                    (time_start >= %s AND time_end <= %s)
+                  )
+            """, (schedule_id, classroom_id, weekday,
+                  time_start, time_start, time_end, time_end, time_start, time_end))
+            room_conflict = cursor.fetchone()
+            if room_conflict:
+                return jsonify(success=False, message="Time conflict in the same classroom")
 
-    # בדיקה של התנגשות בכיתה
-    cursor.execute("""
-        SELECT * FROM schedules
-        WHERE schedule_id != %s
-          AND classroom_id = %s
-          AND weekday = %s
-          AND (
-            (time_start <= %s AND time_end > %s) OR
-            (time_start < %s AND time_end >= %s) OR
-            (time_start >= %s AND time_end <= %s)
-          )
-    """, (schedule_id, classroom_id, weekday,
-          time_start, time_start, time_end, time_end, time_start, time_end))
-    room_conflict = cursor.fetchone()
-    if room_conflict:
-        return jsonify(success=False, message="Time conflict in the same classroom")
+            # בדיקה של התנגשות למרצה
+            cursor.execute("""
+                SELECT s.* FROM schedules s
+                JOIN courses c ON s.course_id = c.course_id
+                WHERE s.schedule_id != %s
+                  AND c.lecturer_name = %s
+                  AND s.weekday = %s
+                  AND (
+                    (s.time_start <= %s AND s.time_end > %s) OR
+                    (s.time_start < %s AND s.time_end >= %s) OR
+                    (s.time_start >= %s AND s.time_end <= %s)
+                  )
+            """, (schedule_id, lecturer_name, weekday,
+                  time_start, time_start, time_end, time_end, time_start, time_end))
+            lecturer_conflict = cursor.fetchone()
+            if lecturer_conflict:
+                return jsonify(success=False, message="Lecturer has another class at that time")
 
-    # בדיקה של התנגשות למרצה
-    cursor.execute("""
-        SELECT s.* FROM schedules s
-        JOIN courses c ON s.course_id = c.course_id
-        WHERE s.schedule_id != %s
-          AND c.lecturer_name = %s
-          AND s.weekday = %s
-          AND (
-            (s.time_start <= %s AND s.time_end > %s) OR
-            (s.time_start < %s AND s.time_end >= %s) OR
-            (s.time_start >= %s AND s.time_end <= %s)
-          )
-    """, (schedule_id, lecturer_name, weekday,
-          time_start, time_start, time_end, time_end, time_start, time_end))
-    lecturer_conflict = cursor.fetchone()
-    if lecturer_conflict:
-        return jsonify(success=False, message="Lecturer has another class at that time")
+            # עדכון בפועל
+            cursor.execute("""
+                UPDATE schedules
+                SET weekday = %s, time_start = %s, time_end = %s
+                WHERE schedule_id = %s
+            """, (weekday, time_start, time_end, schedule_id))
+            db.commit()
 
-    # עדכון בפועל
-    cursor.execute("""
-        UPDATE schedules
-        SET weekday = %s, time_start = %s, time_end = %s
-        WHERE schedule_id = %s
-    """, (weekday, time_start, time_end, schedule_id))
-    db.commit()
-    cursor.close()
-
-    return jsonify(success=True)
-
+        return jsonify(success=True)
+    except Exception as e:
+        return jsonify(success=False, message=str(e))
 
 @app.route('/api/schedules')
 def api_schedules():
-    cursor = db.cursor(dictionary=True)
-    cursor.execute("""
-    SELECT 
-        s.schedule_id,
-        c.classroom_num,
-        b.building_name,
-        s.course_id,
-        cr.course_name,
-        cr.lecturer_name,
-        s.weekday,
-        s.time_start,
-        s.time_end
-    FROM schedules s
-    JOIN classrooms c ON s.classroom_id = c.classroom_id
-    JOIN buildings b ON c.building_id = b.building_id
-    JOIN courses cr ON s.course_id = cr.course_id
-                   """)
+    with db.cursor(dictionary=True) as cursor:
+        cursor.execute("""
+        SELECT 
+            s.schedule_id,
+            c.classroom_num,
+            b.building_name,
+            s.course_id,
+            cr.course_name,
+            cr.lecturer_name,
+            s.weekday,
+            s.time_start,
+            s.time_end
+        FROM schedules s
+        JOIN classrooms c ON s.classroom_id = c.classroom_id
+        JOIN buildings b ON c.building_id = b.building_id
+        JOIN courses cr ON s.course_id = cr.course_id
+        """)
 
-    rows = cursor.fetchall()
-    cursor.close()
+        rows = cursor.fetchall()
 
     for row in rows:
         for key in row:
@@ -565,12 +564,11 @@ def api_schedules():
             elif isinstance(val, time):
                 row[key] = val.strftime("%H:%M")
             elif isinstance(val, timedelta):
-                row[key] = str(val)  
+                row[key] = str(val)
             elif val is None:
                 row[key] = ""
 
     return jsonify(schedules=rows)
-
 
 
 @app.route('/interactive_schedule')
@@ -589,44 +587,43 @@ def update_schedule():
         time_start = request.form['time_start']
         time_end = request.form['time_end']
 
-        # בדיקת התנגשויות - האם יש כבר שיעור באותה כיתה ובאותו זמן
-        cursor = db.cursor(dictionary=True)
-        conflict_query = '''
-            SELECT * FROM schedules
-            WHERE classroom_id = %s
-              AND schedule_id != %s
-              AND schedule_datetime = %s
-              AND (
-                    (time_start <= %s AND time_end > %s) OR
-                    (time_start < %s AND time_end >= %s) OR
-                    (time_start >= %s AND time_end <= %s)
-              )
-        '''
-        cursor.execute(conflict_query, (
-            classroom_id, schedule_id, schedule_datetime,
-            time_start, time_start,
-            time_end, time_end,
-            time_start, time_end
-        ))
-        conflict = cursor.fetchone()
+        with db.cursor(dictionary=True) as cursor:
+            # בדיקת התנגשויות
+            conflict_query = '''
+                SELECT * FROM schedules
+                WHERE classroom_id = %s
+                  AND schedule_id != %s
+                  AND schedule_datetime = %s
+                  AND (
+                        (time_start <= %s AND time_end > %s) OR
+                        (time_start < %s AND time_end >= %s) OR
+                        (time_start >= %s AND time_end <= %s)
+                  )
+            '''
+            cursor.execute(conflict_query, (
+                classroom_id, schedule_id, schedule_datetime,
+                time_start, time_start,
+                time_end, time_end,
+                time_start, time_end
+            ))
+            conflict = cursor.fetchone()
 
-        if conflict:
-            flash("Conflict detected: Room is already booked during that time.")
-            return redirect(url_for('request_schedule'))
+            if conflict:
+                flash("Conflict detected: Room is already booked during that time.")
+                return redirect(url_for('request_schedule'))
 
-        # עדכון בטבלת schedules
-        update_query = '''
-            UPDATE schedules
-            SET classroom_id = %s, course_id = %s, schedule_datetime = %s,
-                status = %s, time_start = %s, time_end = %s, updated_at = NOW()
-            WHERE schedule_id = %s
-        '''
-        cursor.execute(update_query, (
-            classroom_id, course_id, schedule_datetime,
-            status, time_start, time_end, schedule_id
-        ))
-        db.commit()
-        cursor.close()
+            # עדכון בטבלת schedules
+            update_query = '''
+                UPDATE schedules
+                SET classroom_id = %s, course_id = %s, schedule_datetime = %s,
+                    status = %s, time_start = %s, time_end = %s, updated_at = NOW()
+                WHERE schedule_id = %s
+            '''
+            cursor.execute(update_query, (
+                classroom_id, course_id, schedule_datetime,
+                status, time_start, time_end, schedule_id
+            ))
+            db.commit()
 
         flash("Schedule updated successfully.")
         return redirect(url_for('request_schedule'))
@@ -634,6 +631,7 @@ def update_schedule():
     except Exception as e:
         flash(f"Error updating schedule: {str(e)}")
         return redirect(url_for('request_schedule'))
+
 
 @app.route('/logout')
 def logout():
@@ -643,27 +641,27 @@ def logout():
 
 @app.route('/api/schedule_details/<int:schedule_id>')
 def get_schedule_details(schedule_id):
-    cursor = db.cursor(dictionary=True)
-    cursor.execute("""
-    SELECT s.*, c.classroom_num, c.capacity, c.is_remote_learning, c.is_sheltered,
-           cr.course_name, cr.lecturer_name,
-           b.building_name
-           FROM schedules s
-           JOIN classrooms c ON s.classroom_id = c.classroom_id
-           JOIN buildings b ON c.building_id = b.building_id
-           JOIN courses cr ON s.course_id = cr.course_id
-           WHERE s.schedule_id = %s
-    """, (schedule_id,))
+    with db.cursor(dictionary=True) as cursor:
+        cursor.execute("""
+        SELECT s.*, c.classroom_num, c.capacity, c.is_remote_learning, c.is_sheltered,
+               cr.course_name, cr.lecturer_name,
+               b.building_name
+        FROM schedules s
+        JOIN classrooms c ON s.classroom_id = c.classroom_id
+        JOIN buildings b ON c.building_id = b.building_id
+        JOIN courses cr ON s.course_id = cr.course_id
+        WHERE s.schedule_id = %s
+        """, (schedule_id,))
+        schedule = cursor.fetchone()
 
-    schedule = cursor.fetchone()
+        if not schedule:
+            return jsonify(success=False, message="Schedule not found")
 
-    if not schedule:
-        return jsonify(success=False, message="Schedule not found")
+        cursor.execute("SELECT board_id, board_size FROM boards WHERE classroom_id = %s", (schedule['classroom_id'],))
+        boards = cursor.fetchall()
+        schedule['boards'] = boards
 
-    cursor.execute("SELECT board_id, board_size FROM boards WHERE classroom_id = %s", (schedule['classroom_id'],))
-    boards = cursor.fetchall()
-    schedule['boards'] = boards
-
+    # עיבוד סוגי ערכים
     for key in schedule:
         val = schedule[key]
         if isinstance(val, (datetime, date)):
@@ -675,7 +673,7 @@ def get_schedule_details(schedule_id):
         elif val is None:
             schedule[key] = ""
 
-    # הוספת רשימת תמונות
+    # הוספת תמונות
     image_dir = os.path.join('uploads', 'img', schedule['building_name'], schedule['classroom_num'])
     images = []
     if os.path.exists(image_dir):
@@ -685,21 +683,22 @@ def get_schedule_details(schedule_id):
                 img_path = f"/uploads/img/{encoded_building}/{schedule['classroom_num']}/{filename}"
                 images.append(img_path)
     schedule['images'] = images
-    
+
+    # גרסה שנייה של בדיקת תמונות
     classroom_num = schedule['classroom_num'].split('-')[-1]
     building_name = schedule['building_name']
     base_path = os.path.join('uploads', 'img', building_name, classroom_num)
-    
     image_urls = []
     if os.path.exists(base_path):
         for filename in sorted(os.listdir(base_path)):
             if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
                 image_urls.append(f'/uploads/img/{building_name}/{classroom_num}/{filename}')
-                schedule['images'] = image_urls
+    if image_urls:
+        schedule['images'] = image_urls
 
     return jsonify(schedule)
 
-# ==============================================
+
 @app.route('/api/save_schedule_update', methods=['POST'])
 def save_schedule_update():
     data = request.get_json()
@@ -713,16 +712,13 @@ def save_schedule_update():
     board_count = int(data.get('board_count', 0))
     selected_classroom_num = data.get('selected_classroom_num')
 
-    cursor = db.cursor(dictionary=True)
-
-    try:
+    with db.cursor(dictionary=True) as cursor:
         # שליפת שיבוץ קיים
         cursor.execute("SELECT classroom_id, course_id FROM schedules WHERE schedule_id = %s", (schedule_id,))
         sched = cursor.fetchone()
         if not sched:
             return jsonify(success=False, message="Schedule not found")
 
-        old_classroom_id = sched['classroom_id']
         course_id = sched['course_id']
 
         # בדיקת שינוי בזמן
@@ -734,7 +730,7 @@ def save_schedule_update():
             str(original['time_end']) != time_end
         )
 
-        # בדיקת זמינות מרצה רק אם קיים מרצה
+        # בדיקת זמינות מרצה
         if time_changed:
             cursor.execute("SELECT lecturer_name FROM courses WHERE course_id = %s", (course_id,))
             lecturer_row = cursor.fetchone()
@@ -757,7 +753,7 @@ def save_schedule_update():
                 if cursor.fetchone():
                     return jsonify(success=False, message="Lecturer not available at this time")
 
-        # סינון כיתות זמינות
+        # חיפוש כיתות זמינות
         sheltered_filter = "AND is_sheltered = %s" if is_sheltered == "yes" else ""
         query = f"""
             SELECT * FROM classrooms c
@@ -788,11 +784,9 @@ def save_schedule_update():
         cursor.execute(query, tuple(params))
         available = cursor.fetchall()
 
-        # אין כיתות זמינות
         if not available:
             return jsonify(success=False, message="No available classrooms found")
 
-        # שליחת אופציות בחירה
         if not selected_classroom_num:
             classroom_options = []
             for c in available:
@@ -807,12 +801,9 @@ def save_schedule_update():
                 option = cursor.fetchone()
                 if option:
                     classroom_options.append(option)
-                else:
-                    _ = cursor.fetchall()  # מניעת שגיאת unread result
 
             return jsonify(success=False, message="No available classroom matches the new constraints", available_classrooms=classroom_options)
 
-        # עדכון שיבוץ
         cursor.execute("SELECT classroom_id FROM classrooms WHERE classroom_num = %s", (selected_classroom_num,))
         classroom_row = cursor.fetchone()
         if not classroom_row:
@@ -837,14 +828,8 @@ def save_schedule_update():
             cursor.execute("INSERT INTO boards (board_size, classroom_id) VALUES (%s, %s)", (1, new_classroom_id))
 
         db.commit()
-        return jsonify(success=True)
 
-    finally:
-        try:
-            cursor.fetchall()
-        except:
-            pass
-        cursor.close()
+    return jsonify(success=True)
 
 @app.route('/reports_statistics')
 def reports_schedule():
@@ -856,9 +841,11 @@ def classroom_image(building, room, filename):
     folder_path = os.path.join('uploads', 'img', building, room)
     return send_from_directory(folder_path, filename)
 
+
 @app.route('/second_schedule')
 def second_schedule():
     return render_template('second_schedule.html')
+
 
 if __name__ == '__main__':
     app.run(debug=True)
