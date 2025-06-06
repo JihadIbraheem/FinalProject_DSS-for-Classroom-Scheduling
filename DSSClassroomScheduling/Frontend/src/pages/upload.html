@@ -137,6 +137,16 @@
 <main>
   <div class="card">
     <h2>Upload or Add Schedule</h2>
+    {% if data_exists %}
+  <div style="background-color: #fff3cd; color: #856404; padding: 10px; border: 1px solid #ffeeba; border-radius: 0.5rem; margin-bottom: 1rem;">
+    📌 Existing data found in the system
+  </div>
+{% else %}
+  <div style="background-color: #d4edda; color: #155724; padding: 10px; border: 1px solid #c3e6cb; border-radius: 0.5rem; margin-bottom: 1rem;">
+    ✅ No data found — ready to upload a new file
+  </div>
+{% endif %}
+
     <div id="upload-info-icon" style="text-align: right; position: relative; margin-bottom: 10px;">
   <span onmouseover="showTooltip()" onmouseout="hideTooltip()" style="cursor: help; font-weight: bold; font-size: 20px;">ⓘ</span>
   <div id="tooltip" style="
@@ -152,14 +162,38 @@
     box-shadow: 0 4px 8px rgba(0,0,0,0.1);
     border-radius: 6px;
     z-index: 1000;
+    direction: ltr;          
+    text-align: left;
   ">
     <strong>File Requirements:</strong><br>
     • Must be Excel (.xlsx)<br>
-    • Required columns:<br> <code>יום, חדר, בניין, קיבולת, 08:00 - 09:00, 09:00 - 10:00, .. , 21:00 - 22:00</code><br>
+    • Required columns:<br> <code>יום, חדר, בניין, קיבולת,<br> 08:00 - 09:00, 09:00 - 10:00, .. , 21:00 - 22:00</code><br>
     • Course format inside cells: <code>203.123(30)[Dr. Smith]{Intro to CS}</code>
   </div>
   </div>
-
+      <div id="manual-info-icon" style="display: none; text-align: right; position: relative; margin: 10px 0;">
+        <span onmouseover="showManualTooltip()" onmouseout="hideManualTooltip()" style="cursor: help; font-weight: bold; font-size: 20px;">ⓘ</span>
+        <div id="manual-tooltip" style="
+    display: none;
+    position: absolute;
+    right: 0;
+    top: 24px;
+    background: #fff;
+    border: 1px solid #ccc;
+    padding: 10px;
+    width: 320px;
+    font-size: 13px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    border-radius: 6px;
+    z-index: 1000;
+    direction: ltr;          
+    text-align: left;
+      ">
+    <strong>Manual Entry Info:</strong><br>
+    Here you can add courses manually. If no existing data is stored, the system will automatically generate classroom schedules for the added courses.<br>
+    If data already exists, you can still add additional courses to be scheduled accordingly.
+  </div>
+</div>
 
     <!-- כפתורי בחירה -->
    <div style="display:flex; gap:1rem; margin-bottom:1rem;">
@@ -206,6 +240,7 @@ function showUploadForm() {
   document.getElementById("upload-info-icon").style.display = "block";
   document.getElementById("uploadBtn").classList.add("active");
   document.getElementById("manualBtn").classList.remove("active");
+  document.getElementById("manual-info-icon").style.display = "none";
 }
 
 function showManualForm() {
@@ -214,6 +249,7 @@ function showManualForm() {
   document.getElementById("upload-info-icon").style.display = "none";
   document.getElementById("uploadBtn").classList.remove("active");
   document.getElementById("manualBtn").classList.add("active");
+  document.getElementById("manual-info-icon").style.display = "block";
 }
 
 
@@ -278,6 +314,13 @@ function addManualRow() {
 
   container.appendChild(div);
 }
+function showManualTooltip() {
+  document.getElementById('manual-tooltip').style.display = 'block';
+}
+function hideManualTooltip() {
+  document.getElementById('manual-tooltip').style.display = 'none';
+}
+
   window.onload = () => {
     if (document.getElementById("manual-form").style.display !== "none") {
       addManualRow();

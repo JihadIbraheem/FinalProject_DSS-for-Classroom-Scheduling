@@ -202,28 +202,53 @@
       filterSchedules();
     }
 
-    function renderCards() {
-      const container = document.getElementById('schedule-cards-container');
-      container.innerHTML = '';
-      schedules.forEach(r => {
-        const card = document.createElement('div');
-        card.className = 'schedule-card';
-        card.dataset.course = (r.course_id + ' ' + r.course_name).toLowerCase();
-        card.dataset.lecturer = r.lecturer_name.toLowerCase();
-        card.dataset.weekday = r.weekday.toLowerCase();
-        card.dataset.building = r.building_name.toLowerCase();
-        card.innerHTML = `
-          <h3>${r.course_id} - ${r.course_name}</h3>
-          <p><strong>Classroom:</strong> ${r.classroom_num}</p>
-          <p><strong>Building:</strong> ${r.building_name}</p>
-          <p><strong>Lecturer:</strong> ${r.lecturer_name}</p>
-          <p><strong>Day:</strong> ${r.weekday}</p>
-          <p><strong>Time:</strong> ${r.time_start} - ${r.time_end}</p>
-          <button onclick="editRow(${r.schedule_id})">Edit</button>
-        `;
-        container.appendChild(card);
-      });
+function renderCards() {
+  const container = document.getElementById('schedule-cards-container');
+  container.innerHTML = '';
+  schedules.forEach(r => {
+    const card = document.createElement('div');
+    card.className = 'schedule-card';
+    card.dataset.course = (r.course_id + ' ' + r.course_name).toLowerCase();
+    card.dataset.lecturer = r.lecturer_name.toLowerCase();
+    card.dataset.weekday = r.weekday.toLowerCase();
+    card.dataset.building = r.building_name.toLowerCase();
+    card.innerHTML = `
+      <h3>${r.course_id} - ${r.course_name}</h3>
+      <p><strong>Classroom:</strong> ${r.classroom_num}</p>
+      <p><strong>Building:</strong> ${r.building_name}</p>
+      <p><strong>Lecturer:</strong> ${r.lecturer_name}</p>
+      <p><strong>Day:</strong> ${r.weekday}</p>
+      <p><strong>Time:</strong> ${r.time_start} - ${r.time_end}</p>
+      <div class="actions">
+      <button onclick="editRow(${r.schedule_id})">Edit Schedule</button>
+      <button onclick="confirmDelete('${r.schedule_id}', '${r.course_id}')">Delete</button>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+
+function confirmDelete(scheduleId, courseId) {
+    if (confirm("Are you sure you want to delete this schedule?")) {
+        fetch('/delete_schedule', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ schedule_id: scheduleId, course_id: courseId })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert("Schedule deleted successfully!");
+                location.reload();
+            } else {
+                alert("Error deleting schedule: " + data.message);
+            }
+        });
     }
+}
 
     function filterSchedules() {
       const idFilter = document.getElementById('filter-course-id').value.toLowerCase();

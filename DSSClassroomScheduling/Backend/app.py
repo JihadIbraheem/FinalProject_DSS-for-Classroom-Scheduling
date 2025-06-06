@@ -381,7 +381,10 @@ def upload():
             flash(f'An error occurred: {e}')
             return redirect(url_for('upload'))
 
-    return render_template('upload.html')
+    # עבור בקשת GET: שלח מידע אם קיימים נתונים
+    data_exists = is_data_existing()
+    return render_template('upload.html', data_exists=data_exists)
+
 
 
 @app.route('/delete_data', methods=['POST'])
@@ -834,6 +837,24 @@ def save_schedule_update():
 @app.route('/reports_statistics')
 def reports_schedule():
     return render_template('reports_statistics.html')
+
+@app.route('/delete_schedule', methods=['POST'])
+def delete_schedule():
+    data = request.get_json()
+    schedule_id = data.get('schedule_id')
+    course_id = data.get('course_id')
+
+    try:
+        with db.cursor() as cursor:
+            # מחיקה מטבלת schedules
+            cursor.execute("DELETE FROM schedules WHERE schedule_id = %s", (schedule_id,))
+            # מחיקה מטבלת courses
+            cursor.execute("DELETE FROM courses WHERE course_id = %s", (course_id,))
+        db.commit()
+        return jsonify(success=True)
+    except Exception as e:
+        return jsonify(success=False, message=str(e))
+
 
 
 @app.route('/uploads/img/<building>/<room>/<filename>')
