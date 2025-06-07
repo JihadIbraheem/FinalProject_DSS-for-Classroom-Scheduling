@@ -92,7 +92,7 @@
   </header>
 
   <main>
-    <h2>Welcome, Admin</h2>
+    <h2>Welcome, {{ user_first_name if user_first_name else 'User' }}</h2>
     <div class="cards">
       <div class="card">
         <h3>Upload a Schedule</h3>

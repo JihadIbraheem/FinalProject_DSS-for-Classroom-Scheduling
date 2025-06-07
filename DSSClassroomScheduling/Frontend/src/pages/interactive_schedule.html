@@ -63,11 +63,17 @@
       align-items:center; justify-content:center;
     }
     .modal {
-      background:#fff; padding:20px; border-radius:8px;
-      box-shadow:0 4px 12px rgba(0,0,0,0.2);
-      max-width:400px; width:90%;
-      position:relative;
+     background: #fff;
+     padding: 20px;
+     border-radius: 8px;
+     box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+     max-width: 500px;
+     width: 95%;
+     max-height: 90vh;
+     overflow-y: auto;
+     position: relative;
     }
+
     .modal h3 { margin-bottom:12px; color:#1E3A8A; }
     .modal label { display:block; margin:8px 0 4px; font-weight:500; }
     .modal input, .modal select {
@@ -102,6 +108,7 @@
   <main>
     <h2>Manage Schedules</h2>
 
+
     <!-- FILTER BAR -->
     <div class="filter-bar">
       <input type="text" id="filter-course-id" placeholder="Course ID" oninput="filterSchedules()">
@@ -120,6 +127,12 @@
         <option>בניין דילן טאובר</option>
         <option>בניין עמיר</option>
       </select>
+    </div>
+
+    <div style="text-align: center; margin-bottom: 20px;">
+      <button onclick="openAddScheduleModal()" style="padding: 10px 16px; background-color: #059669; color: white; border: none; border-radius: 5px;">
+    ➕ Add New Schedule
+      </button>
     </div>
 
     <!-- CARD CONTAINER -->
@@ -178,6 +191,64 @@
     <button class="cancel" onclick="closeModal()">Cancel</button>
   </div>
 </div>
+<!-- ADD SCHEDULE MODAL -->
+<div id="addScheduleModalBackdrop" class="modal-backdrop" onclick="closeAddScheduleModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3>Add New Schedule</h3>
+
+    <label>Is this a one-time schedule?</label>
+    <select id="is-onetime">
+      <option value="no">Recurring</option>
+      <option value="yes">One-Time</option>
+    </select>
+
+    <label>Course ID</label>
+    <input type="text" id="new-course-id" />
+
+    <label>Course Name</label>
+    <input type="text" id="new-course-name" />
+
+    <label>Lecturer</label>
+    <input type="text" id="new-lecturer" />
+
+    <label>Number of Students</label>
+    <input type="number" id="new-capacity" />
+
+    <label>Duration (hours)</label>
+    <input type="number" id="new-duration" />
+
+    <label>Weekday</label>
+    <select id="new-weekday">
+      <option value="א'">א'</option>
+      <option value="ב'">ב'</option>
+      <option value="ג'">ג'</option>
+      <option value="ד'">ד'</option>
+      <option value="ה'">ה'</option>
+      <option value="ו'">ו'</option>
+    </select>
+
+    <label>Remote Learning</label>
+    <select id="new-remote">
+      <option value="yes">Yes</option>
+      <option value="no">No</option>
+    </select>
+
+    <label>Sheltered Room</label>
+    <select id="new-sheltered">
+      <option value="yes">Yes</option>
+      <option value="no">No</option>
+    </select>
+
+    <div id="end-date-group" style="display:none;">
+      <label>End Date (if one-time)</label>
+      <input type="date" id="new-end-date" />
+    </div>
+
+
+    <button onclick="submitNewSchedule()">Submit</button>
+    <button onclick="closeAddScheduleModal()" style="position: absolute; top: 0px; right: 0px; background: none; border: none; font-size: 33px; color: #d32b2b;">&times;</button>
+  </div>
+</div>
 
 
   <!-- CLASSROOM SELECTION MODAL -->
@@ -229,6 +300,30 @@ function renderCards() {
 }
 
 
+  document.getElementById('is-onetime').addEventListener('change', function () {
+    const selected = this.value;
+    const endDateGroup = document.getElementById('end-date-group');
+    if (selected === 'yes') {
+      endDateGroup.style.display = 'block';
+    } else {
+      endDateGroup.style.display = 'none';
+      document.getElementById('new-end-date').value = '';
+    }
+  });
+
+function openAddScheduleModal() {
+  if (schedules.length === 0) {
+    alert("Cannot add schedule: No existing data found in the system.");
+    return;
+  }
+  document.getElementById('addScheduleModalBackdrop').style.display = 'flex';
+}
+
+
+function closeAddScheduleModal() {
+  document.getElementById('addScheduleModalBackdrop').style.display = 'none';
+}
+
 function confirmDelete(scheduleId, courseId) {
     if (confirm("Are you sure you want to delete this schedule?")) {
         fetch('/delete_schedule', {
@@ -248,6 +343,36 @@ function confirmDelete(scheduleId, courseId) {
             }
         });
     }
+}
+
+async function submitNewSchedule() {
+  const data = {
+    course_id: document.getElementById('new-course-id').value,
+    course_name: document.getElementById('new-course-name').value,
+    lecturer_name: document.getElementById('new-lecturer').value,
+    students_num: parseInt(document.getElementById('new-capacity').value),
+    duration: parseFloat(document.getElementById('new-duration').value),
+    weekday: document.getElementById('new-weekday').value,
+    is_remote_learning: document.getElementById('new-remote').value,
+    is_sheltered: document.getElementById('new-sheltered').value,
+    is_onetime: document.getElementById('is-onetime').value,
+    schedule_end_date: document.getElementById('new-end-date').value || null
+  };
+
+  const res = await fetch('/api/add_schedule_from_ui', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+
+  const result = await res.json();
+  if (result.success) {
+    alert("Schedule added successfully!");
+    closeAddScheduleModal();
+    loadSchedules();
+  } else {
+    alert("Error: " + result.message);
+  }
 }
 
     function filterSchedules() {

@@ -136,8 +136,17 @@
   </header>
 <main>
   <div class="card">
-    <h2>Upload or Add Schedule</h2>
-    {% if data_exists %}
+   <h2>Upload or Add Schedule</h2>
+
+{% if upload_status == 'success' %}
+  <div style="background-color: #d4edda; color: #155724; padding: 10px; border: 1px solid #c3e6cb; border-radius: 0.5rem; margin-bottom: 1rem;">
+    ✅ File uploaded and data inserted successfully
+  </div>
+{% elif upload_status == 'error' %}
+  <div style="background-color: #f8d7da; color: #721c24; padding: 10px; border: 1px solid #f5c6cb; border-radius: 0.5rem; margin-bottom: 1rem;">
+    ❌ Failed to upload file. See error message below
+  </div>
+{% elif data_exists %}
   <div style="background-color: #fff3cd; color: #856404; padding: 10px; border: 1px solid #ffeeba; border-radius: 0.5rem; margin-bottom: 1rem;">
     📌 Existing data found in the system
   </div>
@@ -146,6 +155,7 @@
     ✅ No data found — ready to upload a new file
   </div>
 {% endif %}
+
 
     <div id="upload-info-icon" style="text-align: right; position: relative; margin-bottom: 10px;">
   <span onmouseover="showTooltip()" onmouseout="hideTooltip()" style="cursor: help; font-weight: bold; font-size: 20px;">ⓘ</span>
@@ -190,8 +200,7 @@
     text-align: left;
       ">
     <strong>Manual Entry Info:</strong><br>
-    Here you can add courses manually. If no existing data is stored, the system will automatically generate classroom schedules for the added courses.<br>
-    If data already exists, you can still add additional courses to be scheduled accordingly.
+    Here you can add courses manually. If no existing data is stored, the system will automatically generate classroom schedules for the added courses.
   </div>
 </div>
 
@@ -282,7 +291,7 @@ function addManualRow() {
     </div>
     <div style="margin-bottom: 0.5rem;">
       <label>Duration (hours):</label>
-      <input type="number" name="duration[]" min="0.5" max="5" step="0.5" required style="width: 100%;">
+      <input type="number" name="duration[]" min="0.5" max="8" step="0.5" required style="width: 100%;">
       </div>
     <div style="margin-bottom: 0.5rem;">
       <label>Preferred Weekday:</label>
@@ -317,6 +326,7 @@ function addManualRow() {
 function showManualTooltip() {
   document.getElementById('manual-tooltip').style.display = 'block';
 }
+
 function hideManualTooltip() {
   document.getElementById('manual-tooltip').style.display = 'none';
 }
@@ -343,6 +353,22 @@ function hideTooltip() {
   document.getElementById('tooltip').style.display = 'none';
 }
 
+fetch('/api/max_capacity')
+  .then(res => res.json())
+  .then(data => {
+    const maxCapacity = data.max_capacity;
+
+    document.addEventListener('input', function (e) {
+      if (e.target.name === 'students_num[]') {
+        const value = parseInt(e.target.value);
+        if (value > maxCapacity) {
+          e.target.setCustomValidity(`Max allowed is ${maxCapacity}`);
+        } else {
+          e.target.setCustomValidity('');
+        }
+      }
+    });
+  });
 
 </script>
 

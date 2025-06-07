@@ -183,6 +183,13 @@ def extract_course_details(text):
         return data
     return None
 
+@app.route('/api/max_capacity')
+def max_capacity():
+    with db.cursor() as cursor:
+        cursor.execute("SELECT MAX(capacity) FROM classrooms")
+        result = cursor.fetchone()
+        return jsonify(max_capacity=result[0] if result else 100)
+
 
 def process_file(file):
     df = pd.read_excel(file)
@@ -357,9 +364,10 @@ def insert_courses_to_db(courses_df):
 def uploaded_file(filename):
     return send_from_directory('uploads', filename)
 
-
 @app.route('/upload', methods=['GET', 'POST'])
 def upload():
+    upload_status = None  # New flag
+
     if request.method == 'POST':
         if is_data_existing():
             flash('Data already exists. Please delete existing data before uploading a new file.')
@@ -375,16 +383,87 @@ def upload():
             insert_courses_to_db(course_data)
             insert_data_to_db(schedule_data)
 
+            upload_status = 'success'
             flash('File uploaded and data inserted successfully!')
-            return redirect(url_for('home'))
         except Exception as e:
+            upload_status = 'error'
             flash(f'An error occurred: {e}')
-            return redirect(url_for('upload'))
 
-    # עבור בקשת GET: שלח מידע אם קיימים נתונים
     data_exists = is_data_existing()
-    return render_template('upload.html', data_exists=data_exists)
+    return render_template('upload.html', data_exists=data_exists, upload_status=upload_status)
 
+@app.route('/api/add_schedule_from_ui', methods=['POST'])
+def add_schedule_from_ui():
+    data = request.get_json()
+
+    try:
+        course_id = data['course_id']
+        course_name = data['course_name']
+        lecturer_name = data['lecturer_name']
+        students_num = int(data['students_num'])
+        duration_hours = float(data['duration'])
+        weekday = data['weekday']
+        is_remote = data['is_remote_learning']
+        is_sheltered = data['is_sheltered']
+        schedule_end_date = data.get('schedule_end_date')
+
+        with db.cursor(buffered=True) as cursor:
+            # Insert course
+            cursor.execute("""
+                INSERT INTO courses (course_id, course_name, students_num, lecturer_name)
+                VALUES (%s, %s, %s, %s)
+            """, (course_id, course_name, students_num, lecturer_name))
+
+            duration_minutes = int(duration_hours * 60)
+
+            # Try to find available classroom
+            cursor.execute("""
+                SELECT classroom_id FROM classrooms
+                WHERE capacity >= %s AND is_remote_learning = %s AND is_sheltered = %s
+                ORDER BY capacity ASC
+            """, (students_num, is_remote, is_sheltered))
+            classrooms = cursor.fetchall()
+
+            def try_schedule():
+                for classroom in classrooms:
+                    classroom_id = classroom[0]
+                    cursor.execute("""
+                        SELECT time_start, time_end FROM schedules
+                        WHERE classroom_id = %s AND weekday = %s
+                        ORDER BY time_start
+                    """, (classroom_id, weekday))
+                    busy_times = cursor.fetchall()
+
+                    current_time = datetime.strptime("08:00:00", "%H:%M:%S")
+                    end_of_day = datetime.strptime("18:00:00", "%H:%M:%S")
+
+                    for bt in busy_times + [(end_of_day.time(), end_of_day.time())]:
+                        next_start = datetime.strptime(str(bt[0]), "%H:%M:%S")
+                        potential_end = current_time + timedelta(minutes=duration_minutes)
+
+                        if potential_end <= next_start:
+                            cursor.execute("""
+                                INSERT INTO schedules (classroom_id, course_id, weekday, time_start, time_end, schedule_datetime)
+                                VALUES (%s, %s, %s, %s, %s, %s)
+                            """, (
+                                classroom_id,
+                                course_id,
+                                weekday,
+                                current_time.time(),
+                                potential_end.time(),
+                                schedule_end_date if schedule_end_date else None
+                            ))
+                            return True
+                        current_time = datetime.strptime(str(bt[1]), "%H:%M:%S")
+                return False
+
+            if not try_schedule():
+                return jsonify(success=False, message="No available classroom found.")
+
+            db.commit()
+        return jsonify(success=True)
+    except Exception as e:
+        return jsonify(success=False, message=str(e))
 
 
 @app.route('/delete_data', methods=['POST'])
@@ -397,10 +476,23 @@ def delete_data():
     flash('Existing data deleted successfully!')
     return redirect(url_for('upload'))
 
-
 @app.route('/home')
 def home():
-    return render_template('home.html')
+    today = datetime.today().date()
+    with db.cursor() as cursor:
+        cursor.execute("DELETE FROM schedules WHERE schedule_datetime IS NOT NULL AND schedule_datetime < %s", (today,))
+        db.commit()
+
+    user_first_name = None
+    if 'user_id' in session:
+        with db.cursor(dictionary=True) as cursor:
+            cursor.execute("SELECT first_name FROM users WHERE user_id = %s", (session['user_id'],))
+            user = cursor.fetchone()
+            if user:
+                user_first_name = user['first_name']
+
+    return render_template('home.html', user_first_name=user_first_name)
+
 
 
 @app.route('/login', methods=['GET', 'POST'])
