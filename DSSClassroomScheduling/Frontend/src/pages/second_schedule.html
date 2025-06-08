@@ -602,10 +602,60 @@ async function submitEditModal() {
   const weekday = document.getElementById('modal-weekday').value;
   const time_start = document.getElementById('modal-start').value;
   const time_end = document.getElementById('modal-end').value;
-  const capacity = document.getElementById('modal-capacity').value;
+  const capacity = parseInt(document.getElementById('modal-capacity').value);
   const is_remote_learning = document.getElementById('modal-remote').value;
   const is_sheltered = document.getElementById('modal-sheltered').value;
   const board_count = parseInt(document.getElementById('modal-board-count').value);
+    const original = window.originalSchedule || {};
+
+  if (
+    weekday === original.weekday &&
+    time_start === original.time_start &&
+    time_end === original.time_end &&
+    capacity === String(original.capacity) &&
+    is_remote_learning === original.is_remote_learning &&
+    is_sheltered === original.is_sheltered &&
+    board_count === original.board_count
+  ) {
+    alert("Please change at least one field before checking available classrooms.");
+    return;
+  }
+
+
+  // 1. Validate time format and interval
+  const start = new Date(`1970-01-01T${time_start}:00`);
+  const end = new Date(`1970-01-01T${time_end}:00`);
+  const duration = (end - start) / (1000 * 60 * 60);
+
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || start >= end) {
+    alert("Start time must be earlier than end time.");
+    return;
+  }
+
+  if (duration > 8) {
+    alert("The duration between start and end time must not exceed 8 hours.");
+    return;
+  }
+
+  if (start.getMinutes() !== 0 || end.getMinutes() !== 0) {
+    alert("Only full hour times are allowed (e.g. 08:00, 09:00).");
+    return;
+  }
+
+  // 2. Validate board count
+  if (isNaN(board_count) || board_count < 0 || board_count > 3) {
+    alert("Number of boards must be between 0 and 3.");
+    return;
+  }
+
+  // 3. Validate capacity vs DB max
+  const resCap = await fetch('/api/get_max_capacity');
+  const { max_capacity } = await resCap.json();
+
+  if (capacity > max_capacity) {
+    alert(`Capacity must not exceed max classroom capacity (${max_capacity}).`);
+    return;
+  }
 
   const data = {
     schedule_id,

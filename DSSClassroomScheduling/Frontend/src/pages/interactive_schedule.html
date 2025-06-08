@@ -352,8 +352,8 @@ async function submitNewSchedule() {
   const isOneTime = document.getElementById('is-onetime').value === 'yes';
 
   // Check: Duration must not exceed 8 hours
-  if (duration > 8) {
-    alert("Duration cannot exceed 8 hours.");
+  if (duration > 8 || duration < 0) {
+    alert("Duration must be between 0 and 8.");
     return;
   }
 
@@ -372,7 +372,7 @@ async function submitNewSchedule() {
   // Check: Number of students must not exceed max classroom capacity
   const capacityResponse = await fetch('/api/get_max_capacity');
   const { max_capacity } = await capacityResponse.json();
-  if (studentsNum > max_capacity) {
+  if (studentsNum > max_capacity || studentsNum < 0) {
     alert(`Number of students cannot exceed the maximum classroom capacity (${max_capacity}).`);
     return;
   }

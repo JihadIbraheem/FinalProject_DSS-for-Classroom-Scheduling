@@ -830,6 +830,7 @@ def save_schedule_update():
             str(original['time_end']) != time_end
         )
 
+        # בדיקת זמינות מרצה
         if time_changed:
             cursor.execute("SELECT lecturer_name FROM courses WHERE course_id = %s", (course_id,))
             lecturer_row = cursor.fetchone()
@@ -852,6 +853,9 @@ def save_schedule_update():
                 if cursor.fetchone():
                     return jsonify(success=False, message="Lecturer not available at this time")
 
+        # האם צריך להחריג את הכיתה הנוכחית?
+        exclude_current_classroom = not time_changed
+
         sheltered_filter = "AND is_sheltered = %s" if is_sheltered == "yes" else ""
         query = f"""
             SELECT * FROM classrooms c
@@ -872,6 +876,7 @@ def save_schedule_update():
                 )
             )
         """
+
         params = [capacity, is_remote]
         if is_sheltered == "yes":
             params.append(is_sheltered)
@@ -879,6 +884,11 @@ def save_schedule_update():
             board_count, schedule_id, weekday,
             time_start, time_start, time_end, time_end, time_start, time_end
         ]
+
+        if exclude_current_classroom:
+            query += " AND c.classroom_id != %s"
+            params.append(sched['classroom_id'])
+
         cursor.execute(query, tuple(params))
         available = cursor.fetchall()
 
@@ -909,7 +919,7 @@ def save_schedule_update():
 
         new_classroom_id = classroom_row['classroom_id']
 
-        # ✅ Save schedule update to history
+        # שמירת היסטוריית שינוי
         cursor.execute("""
             INSERT INTO schedule_history (
                 schedule_id, course_id,
@@ -926,10 +936,9 @@ def save_schedule_update():
             original['weekday'], weekday,
             original['time_start'], time_start,
             original['time_end'], time_end,
-            session.get('user_id')  # ודא שהמשתמש מחובר
+            session.get('user_id')
         ))
 
-        # עדכון בפועל
         cursor.execute("""
             UPDATE schedules
             SET classroom_id=%s, weekday=%s, time_start=%s, time_end=%s
@@ -949,6 +958,7 @@ def save_schedule_update():
         db.commit()
 
     return jsonify(success=True)
+
 
 
 @app.route('/reports_statistics')
