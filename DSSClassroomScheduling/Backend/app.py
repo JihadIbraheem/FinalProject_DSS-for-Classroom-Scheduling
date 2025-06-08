@@ -152,10 +152,12 @@ def is_data_existing():
 
 
 def delete_existing_data():
-    with db.cursor(buffered=True) as cursor:  
+    with db.cursor(buffered=True) as cursor:
+        cursor.execute("DELETE FROM schedule_history")
         cursor.execute("DELETE FROM schedules")
         cursor.execute("DELETE FROM courses")
         db.commit()
+
 
 
 def extract_course_id(text):
@@ -799,7 +801,6 @@ def get_schedule_details(schedule_id):
 
     return jsonify(schedule)
 
-
 @app.route('/api/save_schedule_update', methods=['POST'])
 def save_schedule_update():
     data = request.get_json()
@@ -814,7 +815,6 @@ def save_schedule_update():
     selected_classroom_num = data.get('selected_classroom_num')
 
     with db.cursor(dictionary=True) as cursor:
-        # שליפת שיבוץ קיים
         cursor.execute("SELECT classroom_id, course_id FROM schedules WHERE schedule_id = %s", (schedule_id,))
         sched = cursor.fetchone()
         if not sched:
@@ -822,7 +822,6 @@ def save_schedule_update():
 
         course_id = sched['course_id']
 
-        # בדיקת שינוי בזמן
         cursor.execute("SELECT weekday, time_start, time_end FROM schedules WHERE schedule_id = %s", (schedule_id,))
         original = cursor.fetchone()
         time_changed = (
@@ -831,7 +830,6 @@ def save_schedule_update():
             str(original['time_end']) != time_end
         )
 
-        # בדיקת זמינות מרצה
         if time_changed:
             cursor.execute("SELECT lecturer_name FROM courses WHERE course_id = %s", (course_id,))
             lecturer_row = cursor.fetchone()
@@ -854,7 +852,6 @@ def save_schedule_update():
                 if cursor.fetchone():
                     return jsonify(success=False, message="Lecturer not available at this time")
 
-        # חיפוש כיתות זמינות
         sheltered_filter = "AND is_sheltered = %s" if is_sheltered == "yes" else ""
         query = f"""
             SELECT * FROM classrooms c
@@ -912,6 +909,27 @@ def save_schedule_update():
 
         new_classroom_id = classroom_row['classroom_id']
 
+        # ✅ Save schedule update to history
+        cursor.execute("""
+            INSERT INTO schedule_history (
+                schedule_id, course_id,
+                old_classroom_id, new_classroom_id,
+                old_weekday, new_weekday,
+                old_time_start, new_time_start,
+                old_time_end, new_time_end,
+                updated_by_user_id
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            schedule_id,
+            course_id,
+            sched['classroom_id'], new_classroom_id,
+            original['weekday'], weekday,
+            original['time_start'], time_start,
+            original['time_end'], time_end,
+            session.get('user_id')  # ודא שהמשתמש מחובר
+        ))
+
+        # עדכון בפועל
         cursor.execute("""
             UPDATE schedules
             SET classroom_id=%s, weekday=%s, time_start=%s, time_end=%s
@@ -931,6 +949,7 @@ def save_schedule_update():
         db.commit()
 
     return jsonify(success=True)
+
 
 @app.route('/reports_statistics')
 def reports_schedule():
