@@ -973,6 +973,9 @@ def delete_schedule():
 
     try:
         with db.cursor() as cursor:
+            # ✅ מחיקה גם מהיסטוריית שינויים
+            cursor.execute("DELETE FROM schedule_history WHERE schedule_id = %s", (schedule_id,))
+
             # מחיקה מטבלת schedules
             cursor.execute("DELETE FROM schedules WHERE schedule_id = %s", (schedule_id,))
             # מחיקה מטבלת courses
@@ -981,6 +984,7 @@ def delete_schedule():
         return jsonify(success=True)
     except Exception as e:
         return jsonify(success=False, message=str(e))
+
 
 
 
