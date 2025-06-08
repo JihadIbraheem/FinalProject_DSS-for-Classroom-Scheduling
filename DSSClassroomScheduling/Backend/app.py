@@ -184,35 +184,61 @@ def max_capacity():
         result = cursor.fetchone()
         return jsonify(max_capacity=result[0] if result else 100)
 
-
 def process_file(file):
     df = pd.read_excel(file)
     df.columns = df.columns.map(lambda x: str(x).strip())
 
+    # ✅ בדיקה 1: עמודות חובה
     required_columns = {'יום', 'חדר', 'בניין', 'קיבולת'}
     if not required_columns.issubset(set(df.columns)):
-        raise ValueError(f"Invalid file format. Found columns: {list(df.columns)}. Expected: {list(required_columns)} and hourly slots")
+        raise ValueError(f"Missing required columns. Found columns: {list(df.columns)}. Required: {list(required_columns)}")
+
+    # ✅ בדיקה 2: תאים ריקים בעמודות חיוניות
+    for col in ['יום', 'חדר', 'בניין']:
+        if df[col].isnull().any() or (df[col].astype(str).str.strip() == "").any():
+            raise ValueError(f"Empty values found in required column: '{col}'")
+
+    # ✅ בדיקה 3: עמודות שעות נדרשות
+    hourly_columns = [
+        "08:00 - 09:00", "09:00 - 10:00", "10:00 - 11:00", "11:00 - 12:00",
+        "12:00 - 13:00", "13:00 - 14:00", "14:00 - 15:00", "15:00 - 16:00",
+        "16:00 - 17:00", "17:00 - 18:00", "18:00 - 19:00", "19:00 - 20:00",
+        "20:00 - 21:00", "21:00 - 22:00"
+    ]
+    missing_slots = [col for col in hourly_columns if col not in df.columns]
+    if missing_slots:
+        raise ValueError(f"Missing time slot columns: {missing_slots}")
 
     time_slots = [col for col in df.columns if col not in required_columns]
     schedule_rows = []
     course_rows = []
 
-    for _, row in df.iterrows():
+    for i, row in df.iterrows():
         weekday = row['יום']
         classroom_id = str(row['חדר']).strip()
 
         for slot in time_slots:
-            course_info = str(row[slot]).strip()
-            if pd.notna(course_info) and course_info != '':
+            course_info = row[slot]
+            if pd.notna(course_info):
+                course_info = str(course_info).strip()
+                if course_info == '' or course_info == slot:
+                    continue  # דלג על שורה ריקה או תא שמכיל את שם העמודה
+
                 try:
                     start_time, end_time = slot.split('-')
                 except ValueError:
                     continue
 
-                # שליפת כל פרטי הקורס
+                # ✅ בדיקה 4: פורמט תקין של תא
                 course_data = extract_course_details(course_info)
                 if not course_data:
-                    continue
+                    raise ValueError(f"Invalid course format at row {i+2}, column '{slot}': '{course_info}'")
+
+                # ✅ בדיקה 5: שדות חובה בקורס
+                required_fields = ['course_id', 'students_num', 'course_name']
+                for field in required_fields:
+                    if field not in course_data or str(course_data[field]).strip() == '':
+                        raise ValueError(f"Missing required field '{field}' at row {i+2}, column '{slot}': '{course_info}'")
 
                 schedule_rows.append({
                     'classroom_id': classroom_id,
@@ -225,14 +251,14 @@ def process_file(file):
 
                 course_rows.append(course_data)
 
-    # הפוך ל-DataFrame
     schedule_df = pd.DataFrame(schedule_rows)
     courses_df = pd.DataFrame(course_rows).drop_duplicates(subset='course_id')
     courses_df["students_num"] = courses_df["students_num"].astype(int)
-    
+
     schedule_df = merge_continuous_schedules(schedule_df)
 
     return schedule_df, courses_df
+
 
 
 def merge_continuous_schedules(df):

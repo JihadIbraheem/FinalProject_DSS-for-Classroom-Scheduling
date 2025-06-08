@@ -156,8 +156,18 @@
   </div>
 {% endif %}
 
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <ul class="flashes">
+      {% for category, message in messages %}
+        <li class="alert alert-{{ category }}">{{ message }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+{% endwith %}
 
-    <div id="upload-info-icon" style="text-align: right; position: relative; margin-bottom: 10px;">
+
+<div id="upload-info-icon" style="text-align: right; position: relative; margin-bottom: 10px;">
   <span onmouseover="showTooltip()" onmouseout="hideTooltip()" style="cursor: help; font-weight: bold; font-size: 20px;">ⓘ</span>
   <div id="tooltip" style="
     display: none;
@@ -177,10 +187,25 @@
   ">
     <strong>File Requirements:</strong><br>
     • Must be Excel (.xlsx)<br>
-    • Required columns:<br> <code>יום, חדר, בניין, קיבולת,<br> 08:00 - 09:00, 09:00 - 10:00, .. , 21:00 - 22:00</code><br>
-    • Course format inside cells: <code>203.123(30)[Dr. Smith]{Intro to CS}</code>
+    • Required columns: <code>יום, חדר, בניין, קיבולת</code><br>
+    • These columns must not have empty cells: <code>יום, חדר, בניין</code><br>
+    • Time slot columns that must exist:  
+    <code>
+      08:00 - 09:00, 09:00 - 10:00, 10:00 - 11:00,<br>
+      11:00 - 12:00, 12:00 - 13:00, 13:00 - 14:00,<br>
+      14:00 - 15:00, 15:00 - 16:00, 16:00 - 17:00,<br>
+      17:00 - 18:00, 18:00 - 19:00, 19:00 - 20:00,<br>
+      20:00 - 21:00, 21:00 - 22:00
+    </code><br>
+    • If a time cell contains data, it must be in this format:<br>
+    <code>
+      א-214.1300א01(   144)[ד"ר ברקן ניצנה-ויקטוריה]{הסתברות למערכות מידע - שיעור}
+    </code><br>
+    • Course code <code>214.1300א01</code>, number of students <code>(144)</code>, and course name <code>{...}</code> are required.<br>
+    • Instructor name <code>[...]</code> is optional.
   </div>
-  </div>
+</div>
+
       <div id="manual-info-icon" style="display: none; text-align: right; position: relative; margin: 10px 0;">
         <span onmouseover="showManualTooltip()" onmouseout="hideManualTooltip()" style="cursor: help; font-weight: bold; font-size: 20px;">ⓘ</span>
         <div id="manual-tooltip" style="
