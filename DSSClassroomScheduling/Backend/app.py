@@ -49,15 +49,10 @@ def manual_schedule():
         return redirect(url_for('upload'))
 
     WEEKDAY_MAP = {
-        "א": "א'",
-        "ב": "ב'",
-        "ג": "ג'",
-        "ד": "ד'",
-        "ה": "ה'",
-        "ו": "ו'"
+        "א": "א'", "ב": "ב'", "ג": "ג'", "ד": "ד'", "ה": "ה'", "ו": "ו'"
     }
 
-    cursor = db.cursor(buffered=True)  
+    cursor = db.cursor(buffered=True)
 
     for i in range(len(course_names)):
         course_id = course_ids[i] if course_ids[i] else f"auto_{i+1}"
@@ -85,7 +80,6 @@ def manual_schedule():
         def try_schedule_with_classrooms(classroom_query, allow_relaxation=False):
             for classroom in classroom_query:
                 classroom_id = classroom[0]
-
                 cursor.execute("""
                     SELECT time_start, time_end FROM schedules
                     WHERE classroom_id = %s AND weekday = %s
@@ -105,11 +99,8 @@ def manual_schedule():
                             INSERT INTO schedules (classroom_id, course_id, weekday, time_start, time_end)
                             VALUES (%s, %s, %s, %s, %s)
                         """, (
-                            classroom_id,
-                            course_id,
-                            preferred_day,
-                            current_time.time(),
-                            potential_end.time()
+                            classroom_id, course_id, preferred_day,
+                            current_time.time(), potential_end.time()
                         ))
                         return True, classroom_id
 
@@ -149,8 +140,9 @@ def manual_schedule():
 
     db.commit()
     cursor.close()
-    flash("📅 Manual scheduling completed.")
-    return redirect(url_for('home'))
+    # ✅ הצגת ההודעה בדף upload במקום redirect ל-home
+    return render_template('upload.html', data_exists=True, upload_status='success')
+
 
 def is_data_existing():
     with db.cursor(buffered=True) as cursor:  
@@ -407,16 +399,10 @@ def add_schedule_from_ui():
         is_sheltered = data['is_sheltered']
         schedule_end_date = data.get('schedule_end_date')
 
+        duration_minutes = int(duration_hours * 60)
+
         with db.cursor(buffered=True) as cursor:
-            # Insert course
-            cursor.execute("""
-                INSERT INTO courses (course_id, course_name, students_num, lecturer_name)
-                VALUES (%s, %s, %s, %s)
-            """, (course_id, course_name, students_num, lecturer_name))
-
-            duration_minutes = int(duration_hours * 60)
-
-            # Try to find available classroom
+            # Try to find available classroom first
             cursor.execute("""
                 SELECT classroom_id FROM classrooms
                 WHERE capacity >= %s AND is_remote_learning = %s AND is_sheltered = %s
@@ -442,28 +428,39 @@ def add_schedule_from_ui():
                         potential_end = current_time + timedelta(minutes=duration_minutes)
 
                         if potential_end <= next_start:
-                            cursor.execute("""
-                                INSERT INTO schedules (classroom_id, course_id, weekday, time_start, time_end, schedule_datetime)
-                                VALUES (%s, %s, %s, %s, %s, %s)
-                            """, (
-                                classroom_id,
-                                course_id,
-                                weekday,
-                                current_time.time(),
-                                potential_end.time(),
-                                schedule_end_date if schedule_end_date else None
-                            ))
-                            return True
+                            return classroom_id, current_time.time(), potential_end.time()
                         current_time = datetime.strptime(str(bt[1]), "%H:%M:%S")
-                return False
+                return None, None, None
 
-            if not try_schedule():
-                return jsonify(success=False, message="No available classroom found.")
+            classroom_id, time_start, time_end = try_schedule()
+
+            if not classroom_id:
+                return jsonify(success=False, message="No available classroom found. The schedule was not saved.")
+
+            # Only insert course and schedule if slot was found
+            cursor.execute("""
+                INSERT INTO courses (course_id, course_name, students_num, lecturer_name)
+                VALUES (%s, %s, %s, %s)
+            """, (course_id, course_name, students_num, lecturer_name))
+
+            cursor.execute("""
+                INSERT INTO schedules (classroom_id, course_id, weekday, time_start, time_end, schedule_datetime)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (
+                classroom_id,
+                course_id,
+                weekday,
+                time_start,
+                time_end,
+                schedule_end_date if schedule_end_date else None
+            ))
 
             db.commit()
-        return jsonify(success=True)
+            return jsonify(success=True)
+
     except Exception as e:
         return jsonify(success=False, message=str(e))
+
 
 
 @app.route('/delete_data', methods=['POST'])
@@ -475,6 +472,15 @@ def delete_data():
     delete_existing_data()
     flash('Existing data deleted successfully!')
     return redirect(url_for('upload'))
+
+
+@app.route('/api/get_max_capacity')
+def get_max_capacity():
+    cursor = db.cursor()
+    cursor.execute("SELECT MAX(capacity) FROM classrooms")
+    result = cursor.fetchone()
+    cursor.close()
+    return jsonify({'max_capacity': result[0] or 0})
 
 @app.route('/home')
 def home():
