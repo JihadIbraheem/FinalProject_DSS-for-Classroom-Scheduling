@@ -1,6 +1,9 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask import jsonify, Response, send_from_directory
-
+##########################
+from flask import send_file
+import io
+###########################
 import os
 import pandas as pd
 import mysql.connector
@@ -18,12 +21,145 @@ app.static_folder = '../Frontend/src'
 app.secret_key = 'your_secret_key'
 
 db = mysql.connector.connect(
-    host="localhost",
-    port=3307,
+    host="127.0.0.1",
+    port=3306,
     user="root",
-    password="212165351Hala",
+    password="322858184ji",
     database="classroom_scheduling"
 )
+
+
+###########################
+def get_connection():
+    return mysql.connector.connect(
+        host="127.0.0.1", user="root", password="322858184ji", database="classroom_scheduling"
+    )
+
+@app.route("/reports_statistics")
+def reports_statistics():
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM buildings")
+    buildings = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return render_template("reports_statistics.html", buildings=buildings)
+
+@app.route('/generate_report', methods=['POST'])
+def generate_report():
+    report_type = request.form.get('report_type')
+    building_id = request.form.get('building_id')
+    day = request.form.get('day')
+    start_time = request.form.get('start_time')
+    end_time = request.form.get('end_time')
+
+    conn = get_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        output = io.BytesIO()
+
+        if report_type == 'utilization':
+            cursor.execute("SELECT COUNT(*) AS total FROM classrooms")
+            total = cursor.fetchone()['total']
+            cursor.execute("SELECT COUNT(DISTINCT classroom_id) AS used FROM schedules")
+            used = cursor.fetchone()['used']
+            cursor.execute("""
+                SELECT AVG(used_count) as avg_daily
+                FROM (
+                    SELECT COUNT(DISTINCT classroom_id) AS used_count, weekday
+                    FROM schedules GROUP BY weekday
+                ) as daily
+            """)
+            avg_daily = round(cursor.fetchone()['avg_daily'], 2)
+            cursor.execute("""
+                SELECT HOUR(time_start) as hour, COUNT(*) as count
+                FROM schedules GROUP BY hour ORDER BY count DESC LIMIT 1
+            """)
+            peak_hour = f"{cursor.fetchone()['hour']}:00"
+            cursor.execute("""
+                SELECT COUNT(*) AS underutilized FROM classrooms
+                WHERE classroom_id NOT IN (SELECT DISTINCT classroom_id FROM schedules)
+            """)
+            underutilized = cursor.fetchone()['underutilized']
+
+            summary_df = pd.DataFrame([{
+                "Total Classrooms": total,
+                "Utilized Classrooms": used,
+                "Average Daily Usage Rate": avg_daily,
+                "Peak Usage Hour": peak_hour,
+                "Underutilized Classrooms": underutilized
+            }])
+
+            building_df = pd.read_sql("""
+                SELECT b.building_name, COUNT(c.classroom_id) AS classrooms,
+                    ROUND(AVG(s_count), 2) AS avg_utilization,
+                    weekday AS peak_day,
+                    GROUP_CONCAT(IF(s_count=0, c.classroom_num, NULL)) AS underutilized_rooms
+                FROM buildings b
+                JOIN classrooms c ON c.building_id = b.building_id
+                LEFT JOIN (
+                    SELECT classroom_id, COUNT(*) AS s_count, weekday
+                    FROM schedules GROUP BY classroom_id, weekday
+                ) s ON s.classroom_id = c.classroom_id
+                GROUP BY b.building_id, s.weekday
+            """, conn)
+
+            time_slot_df = pd.read_sql("""
+                SELECT 
+                    CONCAT(LPAD(HOUR(time_start), 2, '0'), ':00-', LPAD(HOUR(time_end), 2, '0'), ':00') AS time_slot,
+                    weekday, COUNT(*) AS 'usage'
+                FROM schedules
+                WHERE HOUR(time_start) BETWEEN 8 AND 21
+                GROUP BY time_slot, weekday
+            """, conn).pivot(index='time_slot', columns='weekday', values='usage').fillna(0)
+
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                summary_df.to_excel(writer, sheet_name='Summary', index=False)
+                building_df.to_excel(writer, sheet_name='Building Breakdown', index=False)
+                time_slot_df.to_excel(writer, sheet_name='Time Slot Usage')
+
+        elif report_type == 'estimated_students':
+            df = pd.read_sql("""
+                SELECT b.building_name,
+                    SUM(c2.students_num) AS estimated_students,
+                    ROUND(AVG(c2.students_num), 2) AS avg_per_room,
+                    s.weekday AS peak_day
+                FROM buildings b
+                JOIN classrooms c ON c.building_id = b.building_id
+                JOIN schedules s ON s.classroom_id = c.classroom_id
+                JOIN courses c2 ON c2.course_id = s.course_id
+                GROUP BY b.building_id, s.weekday
+            """, conn)
+            df.to_excel(output, index=False)
+
+        elif report_type == 'reschedule_needed':
+            df = pd.read_sql("""
+                SELECT * FROM schedules s
+                WHERE s.classroom_id NOT IN (SELECT classroom_id FROM classrooms)
+            """, conn)
+            df.to_excel(output, index=False)
+
+        elif report_type == 'history':
+            df = pd.read_sql("SELECT * FROM schedule_history", conn)
+            df.to_excel(output, index=False)
+
+        else:
+            return "Invalid report type", 400
+
+        output.seek(0)
+        return send_file(
+            output,
+            download_name=f"{report_type}_report.xlsx",
+            as_attachment=True,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+
+    finally:
+        cursor.close()
+        conn.close()
+
+###########################
+
 
 @app.route('/')
 def default_home():
