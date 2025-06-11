@@ -120,13 +120,9 @@
         <option>ד'</option><option>ה'</option><option>ו'</option>
       </select>
       <select id="filter-building" onchange="filterSchedules()">
-        <option value="">Any Building</option>
-        <option>פורטאון</option>
-        <option>הכשרת היישוב</option>
-        <option>אולפן עציון</option>
-        <option>בניין דילן טאובר</option>
-        <option>בניין עמיר</option>
-      </select>
+         <option value="">Any Building</option>
+        </select>
+
     </div>
 
     <div style="text-align: center; margin-bottom: 20px;">
@@ -530,6 +526,21 @@ async function submitEditModal() {
   }
 }
 
+async function loadBuildings() {
+  const res = await fetch('/api/buildings');
+  const data = await res.json();
+  if (data.buildings) {
+    const select = document.getElementById('filter-building');
+    data.buildings.forEach(building => {
+      const opt = document.createElement('option');
+      opt.value = building.building_name;
+      opt.textContent = building.building_name;
+      select.appendChild(opt);
+    });
+  }
+}
+
+
     // Classroom selection modal (if your flow still uses it)
     function closeClassroomModal() {
       document.getElementById('classroomModalBackdrop').style.display = 'none';
@@ -537,7 +548,11 @@ async function submitEditModal() {
     // ...populate and show #classroom-options-list as needed in your existing logic...
 
     // Initialize
-    window.addEventListener('DOMContentLoaded', loadSchedules);
+    window.addEventListener('DOMContentLoaded', () => {
+  loadSchedules();
+  loadBuildings();
+  });
+
   </script>
 </body>
 </html>

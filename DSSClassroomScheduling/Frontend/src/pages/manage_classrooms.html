@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Interactive Schedule</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet"/>
+  <style>
+    * { box-sizing:border-box; margin:0; padding:0; font-family:'Poppins',sans-serif; }
+    body { display:flex; flex-direction:column; min-height:100vh; background:#F3F4F6; color:#374151; }
+    a { color:inherit; text-decoration:none; }
+    button { cursor:pointer; }
+
+    header {
+      background:#1E3A8A; color:#fff; padding:1rem 2rem;
+      display:flex; justify-content:space-between; align-items:center;
+      box-shadow:0 2px 8px rgba(0,0,0,0.1);
+    }
+    .home-link { font-size:1.25rem; font-weight:600; }
+
+    main { flex:1; padding:2rem; }
+    h2 { color:#1E3A8A; margin-bottom:1.5rem; text-align:center; }
+
+    .filter-bar {
+      display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin-bottom:20px;
+    }
+    .filter-bar input,
+    .filter-bar select {
+      padding:6px 10px; border-radius:4px; border:1px solid #ccc;
+    }
+
+    .schedule-card-wrapper {
+      display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+      gap:16px;
+    }
+    .schedule-card {
+      background:#fff; padding:16px; border-radius:8px;
+      box-shadow:2px 2px 8px rgba(0,0,0,0.1);
+      position:relative; display:flex; flex-direction:column;
+    }
+    .schedule-card h3 { margin-bottom:8px; font-size:1.1rem; color:#1E3A8A; }
+    .schedule-card p { margin:4px 0; font-size:0.95rem; }
+    .schedule-card button {
+      margin-top:auto; padding:8px 12px; border:none;
+      background:#2563EB; color:#fff; border-radius:4px;
+      transition:background .2s;
+    }
+    .schedule-card button:hover { background:#1E40AF; }
+
+    .modal-backdrop {
+      display:none; position:fixed; top:0; left:0; right:0; bottom:0;
+      background:rgba(0,0,0,0.4); z-index:100;
+      align-items:center; justify-content:center;
+    }
+    .modal {
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      max-width: 500px; width: 95%;
+      max-height: 90vh; overflow-y: auto;
+      position: relative;
+    }
+
+    .modal h3 { margin-bottom:12px; color:#1E3A8A; }
+    .modal label { display:block; margin:8px 0 4px; font-weight:500; }
+    .modal input, .modal select {
+      width:100%; padding:6px; border:1px solid #ccc; border-radius:4px;
+    }
+    .modal button {
+      margin-top:12px; padding:8px 12px; border:none; border-radius:4px;
+      background:#2563EB; color:#fff; font-weight:600;
+    }
+    .modal button.cancel { background:#6B7280; }
+
+    footer {
+      background:#1E3A8A; color:#fff; text-align:center;
+      padding:1rem; font-size:0.9rem;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <a href="/home" class="home-link">Classroom Scheduling System</a>
+  <a href="/logout" style="background:#fff;color:#1E3A8A;padding:6px 12px;border-radius:4px;">Log Out</a>
+</header>
+
+<main>
+  <h2>Manage Classrooms</h2>
+  <div class="filter-bar">
+  <button onclick="openAddClassroomModal()" style="background: green; color: white; padding: 10px; border: none; border-radius: 6px;">➕ Add Classroom</button>
+
+  <select id="building-filter" onchange="filterByBuilding()" style="min-width: 200px;">
+    <option value="all">All Buildings</option>
+  </select>
+</div>
+
+  <div id="classroom-cards-container" class="schedule-card-wrapper">
+    <!-- Cards will be injected here -->
+  </div>
+</main>
+
+<script>
+let currentClassroomId = null;
+
+function openEditModal(id, floor, capacity, remote, sheltered, boards) {
+  currentClassroomId = id;
+  document.getElementById('edit-floor').value = floor;
+  document.getElementById('edit-capacity').value = capacity;
+  document.getElementById('edit-board-count').value = boards;
+  document.getElementById('edit-remote-select').value = String(remote);
+  document.getElementById('edit-sheltered-select').value = String(sheltered);
+  document.getElementById('edit-modal').style.display = 'block';
+}
+
+function loadBuildingFilterOptions() {
+  fetch('/api/buildings')
+    .then(response => response.json())
+    .then(data => {
+      const filter = document.getElementById('building-filter');
+      data.buildings.forEach(building => {
+        const option = document.createElement('option');
+        option.value = building.building_name;
+        option.textContent = building.building_name;
+        filter.appendChild(option);
+      });
+    });
+}
+
+
+function closeEditModal() {
+  document.getElementById('edit-modal').style.display = 'none';
+}
+
+function saveEdit() {
+  if (!confirm("Are you sure you want to save the changes to this classroom?")) {
+    return; // Cancel was pressed
+  }
+
+  const floor = document.getElementById('edit-floor').value;
+  const capacity = document.getElementById('edit-capacity').value;
+  const is_remote_learning = parseInt(document.getElementById('edit-remote-select').value);
+  const is_sheltered = parseInt(document.getElementById('edit-sheltered-select').value);
+  const board_count = parseInt(document.getElementById('edit-board-count').value);
+
+
+  fetch('/api/update_classroom', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      classroom_id: currentClassroomId,
+      floor_num: floor,
+      capacity,
+      is_remote_learning,
+      is_sheltered,
+      board_count
+    })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.success) {
+      closeEditModal();
+      loadClassrooms();
+    } else {
+      alert('Update failed: ' + data.message);
+    }
+  });
+}
+
+
+function renderClassroomCards(classrooms) {
+  const container = document.getElementById('classroom-cards-container');
+  container.innerHTML = '';
+  classrooms.forEach(c => {
+    const isRemote = c.is_remote_learning === "1" || c.is_remote_learning === 1 || c.is_remote_learning === "yes" || c.is_remote_learning === true;
+    const isSheltered = c.is_sheltered === "1" || c.is_sheltered === 1 || c.is_sheltered === "yes" || c.is_sheltered === true;
+
+    const card = document.createElement('div');
+    card.className = 'schedule-card';
+card.innerHTML = `
+  <h3>Classroom ${c.classroom_num}</h3>
+  <p><strong>Building:</strong> ${c.building_name}</p>
+  <p><strong>Floor:</strong> ${c.floor_num}</p>
+  <p><strong>Capacity:</strong> ${c.capacity}</p>
+  <p><strong>Remote Learning:</strong> ${isRemote ? 'Yes' : 'No'}</p>
+  <p><strong>Sheltered:</strong> ${isSheltered ? 'Yes' : 'No'}</p>
+  <p><strong>Boards:</strong> ${c.board_count}</p>
+  <div style="display: flex; gap: 10px;">
+  <button class="edit-btn"
+    data-id="${c.classroom_id}"
+    data-floor="${c.floor_num}"
+    data-capacity="${c.capacity}"
+    data-remote="${isRemote ? '1' : '0'}"
+    data-sheltered="${isSheltered ? '1' : '0'}"
+    data-boards="${c.board_count}">
+    Edit
+  </button>
+  <button class="delete-btn" data-id="${c.classroom_id}" style="background: #DC2626;">Delete</button>
+ </div>
+
+`;
+
+
+    container.appendChild(card);
+  });
+  bindEditButtons();
+  bindDeleteButtons();
+}
+
+
+function bindEditButtons() {
+  document.querySelectorAll('.edit-btn').forEach(button => {
+    button.addEventListener('click', () => {
+      const id = button.dataset.id;
+      const floor = button.dataset.floor;
+      const capacity = button.dataset.capacity;
+      const remote = button.dataset.remote;
+      const sheltered = button.dataset.sheltered;
+      const boards = button.dataset.boards;
+      openEditModal(id, floor, capacity, remote, sheltered, boards);
+
+    });
+  });
+}
+
+
+function openAddClassroomModal() {
+  document.getElementById('add-classroom-modal').style.display = 'block';
+  document.getElementById('building-choice').value = 'existing'; // לוודא שהבחירה היא Existing
+  toggleBuildingFields(); // מפעיל את הבחירה וטעינת הבניינים
+}
+
+function closeAddClassroomModal() {
+  document.getElementById('add-classroom-modal').style.display = 'none';
+}
+function toggleBuildingFields() {
+  const choice = document.getElementById('building-choice').value;
+  const newField = document.getElementById('new-building-name');
+  const existingSelect = document.getElementById('existing-building-select-container');
+
+  if (choice === 'new') {
+    newField.style.display = 'block';
+    existingSelect.style.display = 'none';
+  } else {
+    newField.style.display = 'none';
+    existingSelect.style.display = 'block';
+    loadBuildingOptions();
+  }
+}
+function loadBuildingOptions() {
+  fetch('/api/buildings')
+    .then(response => response.json())
+    .then(data => {
+      const select = document.getElementById('existing-building-select');
+      select.innerHTML = '';
+      data.buildings.forEach(building => {
+        const option = document.createElement('option');
+        option.value = building.building_id;
+        option.textContent = building.building_name;
+        select.appendChild(option);
+      });
+    });
+}
+
+function submitNewClassroom() {
+  const classroom_num = document.getElementById('new-classroom-num').value;
+  const floor_num = document.getElementById('new-floor-num').value;
+  const capacity = document.getElementById('new-capacity').value;
+  const is_remote_learning = parseInt(document.getElementById('new-remote-select').value);
+  const is_sheltered = parseInt(document.getElementById('new-sheltered-select').value);
+  const building_choice = document.getElementById('building-choice').value;
+  const board_count = parseInt(document.getElementById('new-board-count').value);
+
+  // משתנים עבור בחירת בניין
+  const building_name = (building_choice === 'new') ? document.getElementById('building-name').value : null;
+  const building_id = (building_choice === 'existing') ? document.getElementById('existing-building-select').value : null;
+
+  fetch('/api/add_classroom', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      classroom_num,
+      floor_num,
+      capacity,
+      is_remote_learning,
+      is_sheltered,
+      building_choice,
+      building_name,
+      building_id,
+      board_count
+    })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.success) {
+      closeAddClassroomModal();
+      loadClassrooms();
+    } else {
+      alert('Error: ' + data.message);
+    }
+  });
+}
+
+function bindDeleteButtons() {
+  document.querySelectorAll('.delete-btn').forEach(button => {
+    button.addEventListener('click', () => {
+      const classroomId = button.dataset.id;
+      if (confirm("Are you sure you want to delete this classroom and all its related data?")) {
+        fetch(`/api/delete_classroom/${classroomId}`, {
+          method: 'DELETE'
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            alert("Classroom deleted successfully.");
+            loadClassrooms();
+          } else {
+            alert("Failed to delete classroom: " + data.message);
+          }
+        });
+      }
+    });
+  });
+}
+
+
+function filterByBuilding() {
+  const selected = document.getElementById('building-filter').value.toLowerCase();
+  const cards = document.querySelectorAll('.schedule-card');
+
+  cards.forEach(card => {
+    const buildingName = card.querySelector('p strong')?.nextSibling?.textContent?.trim()?.toLowerCase();
+    if (selected === 'all' || buildingName === selected) {
+      card.style.display = 'block';
+    } else {
+      card.style.display = 'none';
+    }
+  });
+}
+
+async function loadClassrooms() {
+  const res = await fetch('/api/classrooms');
+  const data = await res.json();
+  renderClassroomCards(data.classrooms || data);
+}
+
+window.addEventListener('DOMContentLoaded', loadClassrooms);
+window.addEventListener('DOMContentLoaded', () => {
+  loadClassrooms();
+  loadBuildingFilterOptions();
+});
+
+</script>
+
+<div id="edit-modal" class="modal" style="display:none; position:fixed; top:20%; left:50%; transform:translateX(-50%); z-index:1000; background:white; padding:20px; border-radius:8px;">
+  <!-- Close button X -->
+  <button onclick="closeEditModal()" style="position:absolute; top:10px; right:14px; background:none; border:none; font-size:18px;color:#d11a1a; cursor:pointer;">✖</button>
+  
+  <h3>Edit Classroom</h3>
+
+  <label for="edit-floor">This floor is located at:</label>
+  <input id="edit-floor" placeholder="Floor" /><br><br>
+
+  <label for="edit-capacity">Maximum capacity of:</label>
+  <input id="edit-capacity" type="number" placeholder="Capacity" /><br><br>
+
+  <label for="edit-board-count">Number of Boards:</label>
+  <input id="edit-board-count" type="number" placeholder="Number of Boards" /><br><br>
+
+  <div style="display: flex; gap: 20px; align-items: center; margin-bottom: 16px;">
+    <label for="edit-remote-select">Remote Learning:</label>
+    <select id="edit-remote-select" style="padding: 6px 10px; border-radius: 4px; border: 1px solid #ccc;">
+      <option value="1">Yes</option>
+      <option value="0">No</option>
+    </select>
+
+    <label for="edit-sheltered-select">Sheltered:</label>
+    <select id="edit-sheltered-select" style="padding: 6px 10px; border-radius: 4px; border: 1px solid #ccc;">
+      <option value="1">Yes</option>
+      <option value="0">No</option>
+    </select>
+  </div>
+
+  <button onclick="saveEdit()">Save</button>
+</div>
+
+
+<div id="add-classroom-modal" class="modal" style="display:none; position:fixed; top:10%; left:50%; transform:translateX(-50%); z-index:1000; background:white; padding:20px; border-radius:8px; width:400px;">
+  <h3>Add New Classroom</h3>
+
+  <label for="building-choice">Building:</label>
+  <select id="building-choice" onchange="toggleBuildingFields()" style="width:100%; margin-bottom:10px;">
+    <option value="existing">Existing</option>
+    <option value="new">New</option>
+  </select>
+
+  <div id="existing-building-select-container" style="display:none;">
+  <label for="existing-building-select">Choose Building:</label>
+  <select id="existing-building-select" style="width:100%; padding:6px; margin-bottom:10px;"></select>
+  </div>
+
+
+  <div id="new-building-name" style="display:none;">
+    <label for="building-name">Building Name:</label>
+    <input id="building-name" placeholder="Building Name" style="width:100%; margin-bottom:10px;" />
+  </div>
+
+  <label for="new-classroom-num">Classroom Number:</label>
+  <input id="new-classroom-num" placeholder="Classroom Number" style="width:100%; margin-bottom:10px;" />
+
+  <label for="new-floor-num">Floor:</label>
+  <input id="new-floor-num" placeholder="Floor Number" style="width:100%; margin-bottom:10px;" />
+
+  <label for="new-capacity">Capacity:</label>
+  <input id="new-capacity" type="number" placeholder="Capacity" style="width:100%; margin-bottom:10px;" />
+
+  <label for="new-remote-select">Remote Learning:</label>
+  <select id="new-remote-select" style="width:100%; margin-bottom:10px;">
+  <option value="1">Yes</option>
+  <option value="0">No</option>
+  </select>
+
+  <label for="new-sheltered-select">Sheltered:</label>
+  <select id="new-sheltered-select" style="width:100%; margin-bottom:10px;">
+  <option value="1">Yes</option>
+  <option value="0">No</option>
+  </select>
+
+
+  <label for="new-board-count">Number of Boards:</label>
+  <input id="new-board-count" type="number" placeholder="Number of Boards" style="width:100%; margin-bottom:10px;" />
+
+
+  <button onclick="submitNewClassroom()">Save</button>
+  <button onclick="closeAddClassroomModal()" style="position:absolute; top:10px; right:14px; background:none; border:none; font-size:18px; color:#d11a1a; cursor:pointer;">✖</button>
+</div>
+
+</body>
+</html>

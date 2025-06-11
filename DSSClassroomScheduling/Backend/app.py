@@ -1011,6 +1011,57 @@ def delete_schedule():
     except Exception as e:
         return jsonify(success=False, message=str(e))
 
+@app.route('/api/classrooms')
+def get_classrooms():
+    cursor = db.cursor(dictionary=True)
+    query = """
+    SELECT c.*, b.building_name,
+           (SELECT COUNT(*) FROM boards WHERE classroom_id = c.classroom_id) AS board_count
+    FROM classrooms c
+    JOIN buildings b ON c.building_id = b.building_id
+    """
+    cursor.execute(query)
+    classrooms = cursor.fetchall()
+    cursor.close()
+    return jsonify(classrooms=classrooms)
+
+@app.route('/api/update_classroom', methods=['POST'])
+def update_classroom():
+    data = request.get_json()
+    classroom_id = data.get('classroom_id')
+    floor_num = data.get('floor_num')
+    capacity = data.get('capacity')
+    is_remote_learning = data.get('is_remote_learning')
+    is_sheltered = data.get('is_sheltered')
+    board_count = data.get('board_count', 0)  # מספר לוחות חדש
+
+    try:
+        cursor = db.cursor()
+
+        # עדכון נתוני הכיתה
+        cursor.execute("""
+            UPDATE classrooms
+            SET floor_num = %s,
+                capacity = %s,
+                is_remote_learning = %s,
+                is_sheltered = %s
+            WHERE classroom_id = %s
+        """, (floor_num, capacity, is_remote_learning, is_sheltered, classroom_id))
+
+        # מחיקת כל הלוחות הקיימים עבור הכיתה
+        cursor.execute("DELETE FROM boards WHERE classroom_id = %s", (classroom_id,))
+
+        # הכנסת הלוחות החדשים עם גודל ברירת מחדל (נניח גודל 1)
+        for _ in range(int(board_count)):
+            cursor.execute("INSERT INTO boards (board_size, classroom_id) VALUES (%s, %s)", (1, classroom_id))
+
+        db.commit()
+        cursor.close()
+        return jsonify(success=True)
+
+    except Exception as e:
+        return jsonify(success=False, message=str(e)), 500
+
 
 
 
@@ -1019,11 +1070,92 @@ def classroom_image(building, room, filename):
     folder_path = os.path.join('uploads', 'img', building, room)
     return send_from_directory(folder_path, filename)
 
+@app.route('/api/add_classroom', methods=['POST'])
+def add_classroom():
+    data = request.get_json()
+    classroom_num = data['classroom_num']
+    floor_num = data['floor_num']
+    capacity = data['capacity']
+    is_remote_learning = data['is_remote_learning']
+    is_sheltered = data['is_sheltered']
+    board_count = int(data.get('board_count', 0))  # default 0 if missing
+    building_choice = data['building_choice']
+    building_name = data.get('building_name')
+    building_id = data.get('building_id')
+
+    try:
+        cursor = db.cursor(dictionary=True)
+
+        # Handle building
+        if building_choice == 'new':
+            num_floors = 1  # ערך ברירת מחדל כדי למנוע שגיאה
+            cursor.execute("INSERT INTO buildings (building_name, num_floors) VALUES (%s, %s)", (building_name, num_floors))
+            building_id = cursor.lastrowid
+
+        elif not building_id:
+            return jsonify(success=False, message="Missing building ID for existing building.")
+
+        # Insert classroom
+        cursor.execute("""
+            INSERT INTO classrooms (classroom_num, floor_num, capacity, is_remote_learning, is_sheltered, building_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (classroom_num, floor_num, capacity, is_remote_learning, is_sheltered, building_id))
+
+        classroom_id = cursor.lastrowid  # ID of the inserted classroom
+
+        # Insert boards
+        for _ in range(board_count):
+            cursor.execute("INSERT INTO boards (classroom_id, board_size) VALUES (%s, %s)", (classroom_id, 1))
+
+        db.commit()
+        return jsonify(success=True)
+
+    except Exception as e:
+        return jsonify(success=False, message=str(e))
+
+    finally:
+        cursor.close()
+
+
+@app.route('/api/delete_classroom/<int:classroom_id>', methods=['DELETE'])
+def delete_classroom(classroom_id):
+    try:
+        cursor = db.cursor()
+
+        # מחיקה מטבלת schedule_history
+        cursor.execute("DELETE FROM schedule_history WHERE old_classroom_id = %s OR new_classroom_id = %s", (classroom_id, classroom_id))
+
+        # מחיקה מטבלת schedules
+        cursor.execute("DELETE FROM schedules WHERE classroom_id = %s", (classroom_id,))
+
+        # מחיקה מטבלת boards
+        cursor.execute("DELETE FROM boards WHERE classroom_id = %s", (classroom_id,))
+
+        # מחיקה מטבלת classrooms
+        cursor.execute("DELETE FROM classrooms WHERE classroom_id = %s", (classroom_id,))
+
+        db.commit()
+        cursor.close()
+        return jsonify(success=True)
+    except Exception as e:
+        return jsonify(success=False, message=str(e)), 500
+
+@app.route('/api/buildings')
+def get_buildings():
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT building_id, building_name FROM buildings")
+    buildings = cursor.fetchall()
+    cursor.close()
+    return jsonify(buildings=buildings)
+
 
 @app.route('/second_schedule')
 def second_schedule():
     return render_template('second_schedule.html')
 
+@app.route('/manage_classrooms')
+def manage_classrooms():
+    return render_template('manage_classrooms.html')
 
 if __name__ == '__main__':
     app.run(debug=True)
