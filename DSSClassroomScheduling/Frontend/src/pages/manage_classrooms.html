@@ -90,11 +90,40 @@
 <main>
   <h2>Manage Classrooms</h2>
   <div class="filter-bar">
-  <button onclick="openAddClassroomModal()" style="background: green; color: white; padding: 10px; border: none; border-radius: 6px;">➕ Add Classroom</button>
+  <button onclick="openAddClassroomModal()" style="
+  background: linear-gradient(135deg, #22ca58, #277244);
+  color: white;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: none;
+  font-weight: bold;
+  font-size: 14px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  transition: transform 0.3s;"
+  onmouseover="this.style.transform='scale(1.05)'"
+  onmouseout="this.style.transform='scale(1)'">
+  ➕ Add Classroom
+  </button>
+
 
   <select id="building-filter" onchange="filterByBuilding()" style="min-width: 200px;">
     <option value="all">All Buildings</option>
   </select>
+  <button onclick="toggleOnlyProblematicClassrooms()" id="classroom-issues-toggle" style="
+    background: linear-gradient(135deg, #EF4444, #c16727);
+  color: white;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: none;
+  font-weight: bold;
+  font-size: 14px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  transition: transform 0.3s;
+" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+  🔧 Show Incomplete Classrooms
+</button>
+
+
 </div>
 
   <div id="classroom-cards-container" class="schedule-card-wrapper">
@@ -173,41 +202,79 @@ function saveEdit() {
 function renderClassroomCards(classrooms) {
   const container = document.getElementById('classroom-cards-container');
   container.innerHTML = '';
+
   classrooms.forEach(c => {
     const isRemote = c.is_remote_learning === "1" || c.is_remote_learning === 1 || c.is_remote_learning === "yes" || c.is_remote_learning === true;
     const isSheltered = c.is_sheltered === "1" || c.is_sheltered === 1 || c.is_sheltered === "yes" || c.is_sheltered === true;
 
+    const hasBoardIssue = !c.board_count || c.board_count > 5;
+    const hasCapacityIssue = !c.capacity || c.capacity < 10 || c.capacity > 400;
+    const hasIssue = hasBoardIssue || hasCapacityIssue;
+
     const card = document.createElement('div');
     card.className = 'schedule-card';
-card.innerHTML = `
-  <h3>Classroom ${c.classroom_num}</h3>
-  <p><strong>Building:</strong> ${c.building_name}</p>
-  <p><strong>Floor:</strong> ${c.floor_num}</p>
-  <p><strong>Capacity:</strong> ${c.capacity}</p>
-  <p><strong>Remote Learning:</strong> ${isRemote ? 'Yes' : 'No'}</p>
-  <p><strong>Sheltered:</strong> ${isSheltered ? 'Yes' : 'No'}</p>
-  <p><strong>Boards:</strong> ${c.board_count}</p>
-  <div style="display: flex; gap: 10px;">
-  <button class="edit-btn"
-    data-id="${c.classroom_id}"
-    data-floor="${c.floor_num}"
-    data-capacity="${c.capacity}"
-    data-remote="${isRemote ? '1' : '0'}"
-    data-sheltered="${isSheltered ? '1' : '0'}"
-    data-boards="${c.board_count}">
-    Edit
-  </button>
-  <button class="delete-btn" data-id="${c.classroom_id}" style="background: #DC2626;">Delete</button>
- </div>
 
-`;
+    const issueTooltip = `${hasBoardIssue ? 'Invalid or missing board count' : ''}${hasBoardIssue && hasCapacityIssue ? ' | ' : ''}${hasCapacityIssue ? 'Capacity should be between 10 and 400' : ''}`;
 
+    card.innerHTML = `
+      <h3>
+        Classroom ${c.classroom_num}
+        ${hasIssue ? `<span title="${issueTooltip}" style="color: #DC2626; font-size: 1.2em;">🔧</span>` : ''}
+      </h3>
+      <p><strong>Building:</strong> ${c.building_name}</p>
+      <p><strong>Floor:</strong> ${c.floor_num}</p>
+      <p><strong>Capacity:</strong> ${c.capacity}</p>
+      <p><strong>Remote Learning:</strong> ${isRemote ? 'Yes' : 'No'}</p>
+      <p><strong>Sheltered:</strong> ${isSheltered ? 'Yes' : 'No'}</p>
+      <p><strong>Boards:</strong> ${c.board_count}</p>
+      <div style="display: flex; gap: 10px;">
+<button class="edit-btn"
+  data-id="${c.classroom_id}"
+  data-floor="${c.floor_num}"
+  data-capacity="${c.capacity}"
+  data-remote="${isRemote ? '1' : '0'}"
+  data-sheltered="${isSheltered ? '1' : '0'}"
+  data-boards="${c.board_count}"
+  style="
+    background-color: #10B981;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: 0.3s;"
+  onmouseover="this.style.backgroundColor='#059669'; this.style.transform='scale(1.05)'"
+  onmouseout="this.style.backgroundColor='#10B981'; this.style.transform='scale(1)'">
+  Edit
+</button>
+
+<button class="delete-btn"
+  data-id="${c.classroom_id}"
+  style="
+    background-color: #DC2626;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: 0.3s;"
+  onmouseover="this.style.backgroundColor='#B91C1C'; this.style.transform='scale(1.05)'"
+  onmouseout="this.style.backgroundColor='#DC2626'; this.style.transform='scale(1)'">
+  🗑️ Delete
+</button>
+
+      </div>
+    `;
 
     container.appendChild(card);
   });
+
   bindEditButtons();
   bindDeleteButtons();
 }
+
 
 
 function bindEditButtons() {
@@ -225,6 +292,20 @@ function bindEditButtons() {
   });
 }
 
+let showOnlyProblems = false;
+
+function toggleOnlyProblematicClassrooms() {
+  showOnlyProblems = !showOnlyProblems;
+  const cards = document.querySelectorAll('.schedule-card');
+  cards.forEach(card => {
+    const icon = card.querySelector('h3 span');
+    if (showOnlyProblems) {
+      card.style.display = icon ? 'block' : 'none';
+    } else {
+      card.style.display = 'block';
+    }
+  });
+}
 
 function openAddClassroomModal() {
   document.getElementById('add-classroom-modal').style.display = 'block';

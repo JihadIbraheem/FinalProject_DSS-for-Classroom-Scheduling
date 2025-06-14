@@ -21,10 +21,10 @@ app.static_folder = '../Frontend/src'
 app.secret_key = 'your_secret_key'
 
 db = mysql.connector.connect(
-    host="127.0.0.1",
-    port=3306,
+    host="localhost",
+    port=3307,
     user="root",
-    password="322858184ji",
+    password="212165351Hala",
     database="classroom_scheduling"
 )
 
@@ -32,7 +32,11 @@ db = mysql.connector.connect(
 ###########################
 def get_connection():
     return mysql.connector.connect(
-        host="127.0.0.1", user="root", password="322858184ji", database="classroom_scheduling"
+    host="localhost",
+    port=3307,
+    user="root",
+    password="212165351Hala",
+    database="classroom_scheduling"
     )
 
 @app.route("/reports_statistics")
@@ -188,15 +192,18 @@ def manual_schedule():
         "א": "א'", "ב": "ב'", "ג": "ג'", "ד": "ד'", "ה": "ה'", "ו": "ו'"
     }
 
-    cursor = db.cursor(buffered=True)
+    conn = get_connection()
+    cursor = conn.cursor(buffered=True)
 
     for i in range(len(course_names)):
         course_id = course_ids[i] if course_ids[i] else f"auto_{i+1}"
         course_name = course_names[i]
         lecturer_name = lecturer_names[i]
         students_num = int(capacities[i])
-        is_remote = remote_flags[i]
-        is_sheltered = sheltered_flags[i]
+
+        # המרת ערכים לבוליאן/אינט (0/1)
+        is_remote = 1 if remote_flags[i] in ['1', 'true', 'True', True] else 0
+        is_sheltered = 1 if sheltered_flags[i] in ['1', 'true', 'True', True] else 0
 
         raw_day = weekdays[i].strip() if weekdays[i] else 'א'
         preferred_day = WEEKDAY_MAP.get(raw_day, raw_day)
@@ -243,11 +250,18 @@ def manual_schedule():
                     current_time = datetime.strptime(str(bt[1]), "%H:%M:%S")
             return False, None
 
+        # המרה בטוחה לבוליאנים מספריים (0/1)
+        is_remote = 1 if str(remote_flags[i]).strip() in ['1', 'true', 'True', 'on'] else 0
+        is_sheltered = 1 if str(sheltered_flags[i]).strip() in ['1', 'true', 'True', 'on'] else 0
+        
         cursor.execute("""
-            SELECT classroom_id FROM classrooms
-            WHERE capacity >= %s AND is_remote_learning = %s AND is_sheltered = %s
-            ORDER BY capacity ASC
-        """, (students_num, is_remote, is_sheltered))
+         SELECT classroom_id FROM classrooms
+         WHERE capacity >= %s
+         AND CAST(is_remote_learning AS UNSIGNED) = %s
+         AND CAST(is_sheltered AS UNSIGNED) = %s
+         ORDER BY capacity ASC
+         """, (students_num, is_remote, is_sheltered))
+
         classrooms = cursor.fetchall()
         scheduled, classroom_used = try_schedule_with_classrooms(classrooms)
 
@@ -274,10 +288,12 @@ def manual_schedule():
             else:
                 flash(f"❌ No classroom found for '{course_name}' on {preferred_day}.")
 
-    db.commit()
+    conn.commit()
     cursor.close()
-    # ✅ הצגת ההודעה בדף upload במקום redirect ל-home
+    conn.close()
+
     return render_template('upload.html', data_exists=True, upload_status='success')
+
 
 
 def is_data_existing():
@@ -799,46 +815,31 @@ def update_schedule_fields():
     except Exception as e:
         return jsonify(success=False, message=str(e))
 
-@app.route('/api/schedules')
-def api_schedules():
-    with db.cursor(dictionary=True) as cursor:
-        cursor.execute("""
-        SELECT 
-            s.schedule_id,
-            c.classroom_num,
-            b.building_name,
-            s.course_id,
-            cr.course_name,
-            cr.lecturer_name,
-            s.weekday,
-            s.time_start,
-            s.time_end
-        FROM schedules s
-        JOIN classrooms c ON s.classroom_id = c.classroom_id
-        JOIN buildings b ON c.building_id = b.building_id
-        JOIN courses cr ON s.course_id = cr.course_id
-        """)
-
-        rows = cursor.fetchall()
-
-    for row in rows:
-        for key in row:
-            val = row[key]
-            if isinstance(val, (datetime, date)):
-                row[key] = val.isoformat()
-            elif isinstance(val, time):
-                row[key] = val.strftime("%H:%M")
-            elif isinstance(val, timedelta):
-                row[key] = str(val)
-            elif val is None:
-                row[key] = ""
-
-    return jsonify(schedules=rows)
-
 
 @app.route('/interactive_schedule')
 def interactive_schedule():
     return render_template('interactive_schedule.html')
+
+@app.route('/api/update_course_info', methods=['POST'])
+def update_course_info():
+    data = request.get_json()
+    course_id = data.get('course_id')
+    course_name = data.get('course_name')
+    lecturer_name = data.get('lecturer_name')
+    students_num = data.get('students_num')
+
+    try:
+        with db.cursor() as cursor:
+            cursor.execute("""
+                UPDATE courses 
+                SET course_name = %s, lecturer_name = %s, students_num = %s
+                WHERE course_id = %s
+            """, (course_name, lecturer_name, students_num, course_id))
+        db.commit()
+        return jsonify(success=True)
+    except Exception as e:
+        print(f"Error updating course info: {e}")
+        return jsonify(success=False, message=str(e)), 500
 
 
 @app.route('/update_schedule', methods=['POST'])
@@ -929,7 +930,9 @@ def get_schedule_details(schedule_id):
     # עיבוד סוגי ערכים
     for key in schedule:
         val = schedule[key]
-        if isinstance(val, (datetime, date)):
+        if key in ["is_remote_learning", "is_sheltered"]:
+            schedule[key] = "yes" if val in (1, "1", "yes", True) else "no"
+        elif isinstance(val, (datetime, date)):
             schedule[key] = val.isoformat()
         elif isinstance(val, time):
             schedule[key] = val.strftime('%H:%M')
@@ -962,6 +965,7 @@ def get_schedule_details(schedule_id):
         schedule['images'] = image_urls
 
     return jsonify(schedule)
+
 
 @app.route('/api/save_schedule_update', methods=['POST'])
 def save_schedule_update():
@@ -1276,13 +1280,67 @@ def delete_classroom(classroom_id):
     except Exception as e:
         return jsonify(success=False, message=str(e)), 500
 
+@app.route('/api/schedules')
+def api_schedules():
+    try:
+        db = get_connection() 
+        with db.cursor(dictionary=True) as cursor:
+            cursor.execute("""
+                SELECT 
+                  s.schedule_id,
+                  c.classroom_num,
+                  b.building_name,
+                  s.course_id,
+                  cr.course_name,
+                  cr.lecturer_name,
+                  cr.students_num,
+                  s.weekday,
+                  s.time_start,
+                  s.time_end,
+                  c.is_remote_learning,
+                  c.is_sheltered
+                FROM schedules s
+                JOIN classrooms c ON s.classroom_id = c.classroom_id
+                JOIN buildings b ON c.building_id = b.building_id
+                JOIN courses cr ON s.course_id = cr.course_id
+            """)
+            rows = cursor.fetchall()
+
+        for row in rows:
+            for key in row:
+                val = row[key]
+                if key in ["is_remote_learning", "is_sheltered"]:
+                    row[key] = "yes" if val in (1, "1", "yes", True) else "no"
+                elif isinstance(val, (datetime, date)):
+                    row[key] = val.isoformat()
+                elif isinstance(val, time):
+                    row[key] = val.strftime("%H:%M")
+                elif isinstance(val, timedelta):
+                    row[key] = str(val)
+                elif val is None:
+                    row[key] = ""
+
+        db.close()  
+        return jsonify(schedules=rows)
+
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({"error": "Database error"}), 500
+
 @app.route('/api/buildings')
 def get_buildings():
-    cursor = db.cursor(dictionary=True)
-    cursor.execute("SELECT building_id, building_name FROM buildings")
-    buildings = cursor.fetchall()
-    cursor.close()
-    return jsonify(buildings=buildings)
+    try:
+        db = get_connection() 
+        with db.cursor(dictionary=True) as cursor:
+            cursor.execute("SELECT building_id, building_name FROM buildings")
+            buildings = cursor.fetchall()
+        db.close()  
+        return jsonify(buildings=buildings)
+
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({"error": "Database error"}), 500
+
 
 
 @app.route('/second_schedule')
@@ -1294,4 +1352,5 @@ def manage_classrooms():
     return render_template('manage_classrooms.html')
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, use_reloader=False)
+

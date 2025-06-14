@@ -248,26 +248,30 @@
     </div>
   </main>
 
-  <!-- Include existing edit modal -->
-   <div id="editModalBackdrop" class="modal-backdrop" onclick="closeModal()">
+<!-- Include existing edit modal -->
+<div id="editModalBackdrop" class="modal-backdrop" onclick="closeModal()">
   <div class="modal" onclick="event.stopPropagation()">
+    <!-- כפתור סגירה -->
     <span onclick="closeModal()" style="
-  position: absolute;
-  top: 10px;
-  right: 12px;
-  font-size: 29px;
-  color: #f50b0b;
-  cursor: pointer;
-  font-weight: bold;
-" title="Close">×</span>
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      font-size: 29px;
+      color: #f50b0b;
+      cursor: pointer;
+      font-weight: bold;
+    " title="Close">×</span>
 
+    <!-- שדות חבויים -->
     <input type="hidden" id="modal-schedule-id" />
     <input type="hidden" id="modal-classroom" />
 
+    <!-- מידע נוכחי -->
     <label>Current Classroom</label>
     <input type="text" id="modal-current-classroom" readonly />
-    <input type="text" id="modal-building-name" readonly />
 
+    <label>Building Name</label>
+    <input type="text" id="modal-building-name" readonly />
 
     <label>Course Name</label>
     <input type="text" id="modal-course-name" readonly />
@@ -277,50 +281,44 @@
 
     <hr style="border: none; border-top: 2px solid #1E3A8A; margin: 16px 0;">
     <div style="background:#F9FAFB; padding:12px; border-radius:6px; margin-top:12px;">
-    <p style="margin: 10px 0; font-weight: 600; color: #1E3A8A;">Edit Schedule</p>
+      <p style="margin: 10px 0; font-weight: 600; color: #1E3A8A;">Edit Schedule</p>
 
-    <label>Weekday</label>
-    <select id="modal-weekday">
-  <option value="א'">א'</option>
-  <option value="ב'">ב'</option>
-  <option value="ג'">ג'</option>
-  <option value="ד'">ד'</option>
-  <option value="ה'">ה'</option>
-  <option value="ו'">ו'</option>
-   </select>
+      <label>Weekday</label>
+      <select id="modal-weekday">
+        <option value="א'">א'</option>
+        <option value="ב'">ב'</option>
+        <option value="ג'">ג'</option>
+        <option value="ד'">ד'</option>
+        <option value="ה'">ה'</option>
+        <option value="ו'">ו'</option>
+      </select>
 
+      <label>Start Time</label>
+      <input type="time" id="modal-start" />
 
-    <label>Start Time</label>
-    <input type="time" id="modal-start" />
+      <label>End Time</label>
+      <input type="time" id="modal-end" />
 
-    <label>End Time</label>
-    <input type="time" id="modal-end" />
+      <label>Capacity</label>
+      <input type="number" id="modal-capacity" />
 
-    <label>Capacity</label>
-    <input type="number" id="modal-capacity" />
+      <label>Remote Learning</label>
+      <select id="modal-remote">
+        <option value="yes">Yes</option>
+        <option value="no">No</option>
+      </select>
 
-    <label>Remote Learning</label>
-    <select id="modal-remote">
-  <option value="yes">Yes</option>
-  <option value="no">No</option>
-  </div>
-    </select>
+      <label>Sheltered</label>
+      <select id="modal-sheltered">
+        <option value="yes">Yes</option>
+        <option value="no">No</option>
+      </select>
 
+      <label>Number of Boards</label>
+      <input type="number" id="modal-board-count" min="0" />
 
-    <label>Sheltered</label>
-    <select id="modal-sheltered">
-  <option value="yes">Yes</option>
-  <option value="no">No</option>
-    </select>
-
-
-    <label>Number of Boards</label>
-    <input type="number" id="modal-board-count" min="0" />
-
-    <button onclick="submitEditModal()">Check available classrooms</button>
-    <div style="text-align: right; margin-top: 10px;">
-</div>
-
+      <button onclick="submitEditModal()">Check available classrooms</button>
+    </div>
   </div>
 </div>
 
@@ -874,7 +872,6 @@ async function editRow(schedule_id) {
   imgContainer.appendChild(img);
   });
 
-// הוסף לאלמנט ה-modal במקום מתאים (נניח לפני כפתור עדכון)
 const modal = document.querySelector('#editModalBackdrop .modal');
 modal.appendChild(imgContainer);
 
@@ -883,13 +880,10 @@ modal.appendChild(imgContainer);
   document.getElementById('modal-weekday').value = data.weekday || '';
   document.getElementById('modal-start').value = formatTimeToInput(data.time_start);
   document.getElementById('modal-end').value = formatTimeToInput(data.time_end);
-
   document.getElementById('modal-capacity').value = data.capacity || '';
   document.getElementById('modal-remote').value = data.is_remote_learning || '';
   document.getElementById('modal-sheltered').value = data.is_sheltered || '';
-
   document.getElementById('modal-board-count').value = data.boards.length || 0;
-
   document.getElementById('editModalBackdrop').style.display = 'flex';
 
   window.originalSchedule = {

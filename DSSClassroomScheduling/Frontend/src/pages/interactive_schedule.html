@@ -122,14 +122,39 @@
       <select id="filter-building" onchange="filterSchedules()">
          <option value="">Any Building</option>
         </select>
-
     </div>
 
-    <div style="text-align: center; margin-bottom: 20px;">
-      <button onclick="openAddScheduleModal()" style="padding: 10px 16px; background-color: #059669; color: white; border: none; border-radius: 5px;">
+<div style="display: flex; justify-content: center; gap: 15px; margin-bottom: 20px;">
+  <button onclick="openAddScheduleModal()" style="
+    padding: 10px 16px;
+    background: linear-gradient(135deg, #22ca58, #277244);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: bold;
+    font-size: 14px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    transition: transform 0.3s;
+  " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
     ➕ Add New Schedule
-      </button>
-    </div>
+  </button>
+
+  <button onclick="toggleShowOnlyIssues()" id="issues-toggle" style="
+    background: linear-gradient(135deg, #EF4444, #c16727);
+    color: white;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: none;
+    font-weight: bold;
+    font-size: 14px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    transition: transform 0.3s;
+  " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+    🔧 Show Incomplete Entries
+  </button>
+</div>
+
+
 
     <!-- CARD CONTAINER -->
     <div id="schedule-cards-container" class="schedule-card-wrapper">
@@ -187,6 +212,26 @@
     <button class="cancel" onclick="closeModal()">Cancel</button>
   </div>
 </div>
+
+<div id="editCourseModalBackdrop" class="modal-backdrop" onclick="closeCourseModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3>Edit Course Information</h3>
+    <input type="hidden" id="edit-course-id" />
+
+    <label>Course Name</label>
+    <input type="text" id="edit-course-name" />
+
+    <label>Lecturer Name</label>
+    <input type="text" id="edit-lecturer-name" />
+
+    <label>Number of Students</label>
+    <input type="number" id="edit-students-num" min="0" />
+
+    <button onclick="submitCourseEdit()">Save</button>
+    <button onclick="closeCourseModal()" style="position: absolute; top: 0px; right: 0px; background: none; border: none; font-size: 33px; color: #d32b2b;">&times;</button>
+  </div>
+</div>
+
 <!-- ADD SCHEDULE MODAL -->
 <div id="addScheduleModalBackdrop" class="modal-backdrop" onclick="closeAddScheduleModal()">
   <div class="modal" onclick="event.stopPropagation()">
@@ -272,27 +317,133 @@
 function renderCards() {
   const container = document.getElementById('schedule-cards-container');
   container.innerHTML = '';
+
   schedules.forEach(r => {
+    const hasLecturerIssue = !r.lecturer_name || r.lecturer_name.trim() === '';
+    const hasStudentsIssue = !r.students_num || r.students_num < 10;
+    const hasIssue = hasLecturerIssue || hasStudentsIssue;
+
+    // Tooltip message for the issue
+    let issueTooltip = '';
+    if (hasLecturerIssue && hasStudentsIssue) {
+      issueTooltip = "Missing lecturer name and number of students is missing or less than 10";
+    } else if (hasLecturerIssue) {
+      issueTooltip = "Missing lecturer name";
+    } else if (hasStudentsIssue) {
+      issueTooltip = "Number of students is missing or less than 10";
+    }
+
     const card = document.createElement('div');
     card.className = 'schedule-card';
     card.dataset.course = (r.course_id + ' ' + r.course_name).toLowerCase();
     card.dataset.lecturer = r.lecturer_name.toLowerCase();
     card.dataset.weekday = r.weekday.toLowerCase();
     card.dataset.building = r.building_name.toLowerCase();
-    card.innerHTML = `
-      <h3>${r.course_id} - ${r.course_name}</h3>
-      <p><strong>Classroom:</strong> ${r.classroom_num}</p>
-      <p><strong>Building:</strong> ${r.building_name}</p>
-      <p><strong>Lecturer:</strong> ${r.lecturer_name}</p>
-      <p><strong>Day:</strong> ${r.weekday}</p>
-      <p><strong>Time:</strong> ${r.time_start} - ${r.time_end}</p>
-      <div class="actions">
-      <button onclick="editRow(${r.schedule_id})">Edit Schedule</button>
-      <button onclick="confirmDelete('${r.schedule_id}', '${r.course_id}')">Delete</button>
-      </div>
-    `;
+    card.dataset.issue = hasIssue ? 'yes' : 'no';
+
+card.innerHTML = `
+  <h3>${r.course_id} - ${r.course_name}
+    ${hasIssue ? `<span title="${issueTooltip}" style="color: #DC2626; cursor: help;">🔧</span>` : ''}
+  </h3>
+  <p><strong>Classroom:</strong> ${r.classroom_num}</p>
+  <p><strong>Building:</strong> ${r.building_name}</p>
+  <p><strong>Lecturer:</strong> ${r.lecturer_name || '—'}</p>
+  <p><strong>Students:</strong> ${r.students_num || '—'}</p>
+  <p><strong>Day:</strong> ${r.weekday}</p>
+  <p><strong>Time:</strong> ${r.time_start} - ${r.time_end}</p>
+
+  <div class="actions" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;">
+    <button onclick="editRow(${r.schedule_id})" style="
+      background-color: #3B82F6;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: 0.3s;
+    " onmouseover="this.style.backgroundColor='#2563EB'; this.style.transform='scale(1.05)'"
+      onmouseout="this.style.backgroundColor='#3B82F6'; this.style.transform='scale(1)'">
+      Edit Schedule
+    </button>
+
+      <button onclick='editCourse(
+  ${JSON.stringify(r.course_id || "")}, 
+  ${JSON.stringify(r.course_name || "")}, 
+  ${JSON.stringify(r.lecturer_name || "")}, 
+  ${r.students_num != null ? r.students_num : 0}
+)'
+ style="
+      background-color: #10B981;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: 0.3s;
+    " onmouseover="this.style.backgroundColor='#059669'; this.style.transform='scale(1.05)'"
+      onmouseout="this.style.backgroundColor='#10B981'; this.style.transform='scale(1)'">
+      Edit Course Info
+    </button>
+
+    <button onclick="confirmDelete('${r.schedule_id}', '${r.course_id}')" style="
+      background-color: #DC2626;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: 0.3s;
+    " onmouseover="this.style.backgroundColor='#B91C1C'; this.style.transform='scale(1.05)'"
+      onmouseout="this.style.backgroundColor='#DC2626'; this.style.transform='scale(1)'">
+      🗑️ Delete
+    </button>
+  </div>
+`;
+
+
     container.appendChild(card);
   });
+}
+
+
+
+function editCourse(course_id, name, lecturer, students) {
+  document.getElementById('edit-course-id').value = course_id;
+  document.getElementById('edit-course-name').value = name;
+  document.getElementById('edit-lecturer-name').value = lecturer;
+  document.getElementById('edit-students-num').value = students;
+  document.getElementById('editCourseModalBackdrop').style.display = 'flex';
+}
+
+function closeCourseModal() {
+  document.getElementById('editCourseModalBackdrop').style.display = 'none';
+}
+
+async function submitCourseEdit() {
+  const data = {
+    course_id: document.getElementById('edit-course-id').value,
+    course_name: document.getElementById('edit-course-name').value,
+    lecturer_name: document.getElementById('edit-lecturer-name').value,
+    students_num: parseInt(document.getElementById('edit-students-num').value)
+  };
+
+  const res = await fetch('/api/update_course_info', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+
+  const result = await res.json();
+  if (result.success) {
+    alert("Course info updated");
+    closeCourseModal();
+    loadSchedules();
+  } else {
+    alert("Update failed: " + result.message);
+  }
 }
 
 
@@ -420,6 +571,22 @@ async function submitNewSchedule() {
         card.style.display = (matchId && matchName && matchLect && matchDay && matchBld) ? '' : 'none';
       });
     }
+
+let showingOnlyIssues = false;
+
+function toggleShowOnlyIssues() {
+  showingOnlyIssues = !showingOnlyIssues;
+  const toggleBtn = document.getElementById('issues-toggle');
+  toggleBtn.textContent = showingOnlyIssues ? '🔧 Show All' : '🔧 Show Incomplete Entries';
+
+  document.querySelectorAll('.schedule-card').forEach(card => {
+    if (showingOnlyIssues && card.dataset.issue !== 'yes') {
+      card.style.display = 'none';
+    } else {
+      card.style.display = '';
+    }
+  });
+}
 
 function editRow(schedule_id) {
   const schedule = schedules.find(s => s.schedule_id === schedule_id);
