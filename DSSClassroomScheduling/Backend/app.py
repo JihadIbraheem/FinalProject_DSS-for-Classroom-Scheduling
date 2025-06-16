@@ -201,9 +201,14 @@ def manual_schedule():
         lecturer_name = lecturer_names[i]
         students_num = int(capacities[i])
 
-        # המרת ערכים לבוליאן/אינט (0/1)
-        is_remote = 1 if remote_flags[i] in ['1', 'true', 'True', True] else 0
-        is_sheltered = 1 if sheltered_flags[i] in ['1', 'true', 'True', True] else 0
+        remote_raw = remote_flags[i].strip().lower()
+        sheltered_raw = sheltered_flags[i].strip().lower()
+
+        is_remote_any = remote_raw == 'any'
+        is_sheltered_any = sheltered_raw == 'any'
+
+        is_remote = 1 if remote_raw in ['1', 'true', 'yes', 'on'] else 0
+        is_sheltered = 1 if sheltered_raw in ['1', 'true', 'yes', 'on'] else 0
 
         raw_day = weekdays[i].strip() if weekdays[i] else 'א'
         preferred_day = WEEKDAY_MAP.get(raw_day, raw_day)
@@ -250,22 +255,26 @@ def manual_schedule():
                     current_time = datetime.strptime(str(bt[1]), "%H:%M:%S")
             return False, None
 
-        # המרה בטוחה לבוליאנים מספריים (0/1)
-        is_remote = 1 if str(remote_flags[i]).strip() in ['1', 'true', 'True', 'on'] else 0
-        is_sheltered = 1 if str(sheltered_flags[i]).strip() in ['1', 'true', 'True', 'on'] else 0
-        
-        cursor.execute("""
-         SELECT classroom_id FROM classrooms
-         WHERE capacity >= %s
-         AND CAST(is_remote_learning AS UNSIGNED) = %s
-         AND CAST(is_sheltered AS UNSIGNED) = %s
-         ORDER BY capacity ASC
-         """, (students_num, is_remote, is_sheltered))
+        # יצירת שאילתת חיפוש כיתות לפי אילוצים
+        query = "SELECT classroom_id, capacity, is_remote_learning, is_sheltered FROM classrooms WHERE capacity >= %s"
+        params = [students_num]
 
+        if not is_remote_any:
+            query += " AND is_remote_learning = %s"
+            params.append(is_remote)
+
+        if not is_sheltered_any:
+            query += " AND is_sheltered = %s"
+            params.append(is_sheltered)
+
+        query += " ORDER BY capacity ASC"
+
+        cursor.execute(query, tuple(params))
         classrooms = cursor.fetchall()
-        scheduled, classroom_used = try_schedule_with_classrooms(classrooms)
+        scheduled, classroom_used = try_schedule_with_classrooms([(c[0],) for c in classrooms])
 
         if not scheduled:
+            # ניסיון רפוי מגבלות
             cursor.execute("""
                 SELECT classroom_id, capacity, is_remote_learning, is_sheltered FROM classrooms
                 WHERE capacity >= %s
@@ -278,9 +287,9 @@ def manual_schedule():
                 for c in relaxed_classrooms:
                     if c[0] == classroom_used:
                         mismatches = []
-                        if str(c[2]) != str(is_remote):
+                        if not is_remote_any and str(c[2]) != str(is_remote):
                             mismatches.append("remote learning mismatch")
-                        if str(c[3]) != str(is_sheltered):
+                        if not is_sheltered_any and str(c[3]) != str(is_sheltered):
                             mismatches.append("sheltered room mismatch")
                         msg = f"⚠️ Course '{course_name}' was scheduled in a non-ideal classroom: {', '.join(mismatches)}."
                         flash(msg)
@@ -293,7 +302,6 @@ def manual_schedule():
     conn.close()
 
     return render_template('upload.html', data_exists=True, upload_status='success')
-
 
 
 def is_data_existing():
@@ -575,19 +583,42 @@ def add_schedule_from_ui():
         students_num = int(data['students_num'])
         duration_hours = float(data['duration'])
         weekday = data['weekday']
-        is_remote = data['is_remote_learning']
-        is_sheltered = data['is_sheltered']
         schedule_end_date = data.get('schedule_end_date')
+
+        # פענוח הערכים של Remote Learning ו-Sheltered
+        is_remote_raw = str(data['is_remote_learning']).strip().lower()
+        is_sheltered_raw = str(data['is_sheltered']).strip().lower()
+
+        # המרה לערכים לוגיים או None אם 'any'
+        is_remote = None
+        if is_remote_raw == 'yes':
+            is_remote = 1
+        elif is_remote_raw == 'no':
+            is_remote = 0
+
+        is_sheltered = None
+        if is_sheltered_raw == 'yes':
+            is_sheltered = 1
+        elif is_sheltered_raw == 'no':
+            is_sheltered = 0
 
         duration_minutes = int(duration_hours * 60)
 
         with db.cursor(buffered=True) as cursor:
-            # Try to find available classroom first
-            cursor.execute("""
-                SELECT classroom_id FROM classrooms
-                WHERE capacity >= %s AND is_remote_learning = %s AND is_sheltered = %s
-                ORDER BY capacity ASC
-            """, (students_num, is_remote, is_sheltered))
+            # בניית שאילתה דינאמית
+            query = "SELECT classroom_id FROM classrooms WHERE capacity >= %s"
+            params = [students_num]
+
+            if is_remote is not None:
+                query += " AND is_remote_learning = %s"
+                params.append(is_remote)
+
+            if is_sheltered is not None:
+                query += " AND is_sheltered = %s"
+                params.append(is_sheltered)
+
+            query += " ORDER BY capacity ASC"
+            cursor.execute(query, tuple(params))
             classrooms = cursor.fetchall()
 
             def try_schedule():
@@ -617,12 +648,13 @@ def add_schedule_from_ui():
             if not classroom_id:
                 return jsonify(success=False, message="No available classroom found. The schedule was not saved.")
 
-            # Only insert course and schedule if slot was found
+            # הכנסת קורס למסד הנתונים
             cursor.execute("""
                 INSERT INTO courses (course_id, course_name, students_num, lecturer_name)
                 VALUES (%s, %s, %s, %s)
             """, (course_id, course_name, students_num, lecturer_name))
 
+            # הכנסת שיבוץ למסד הנתונים
             cursor.execute("""
                 INSERT INTO schedules (classroom_id, course_id, weekday, time_start, time_end, schedule_datetime)
                 VALUES (%s, %s, %s, %s, %s, %s)
@@ -640,7 +672,6 @@ def add_schedule_from_ui():
 
     except Exception as e:
         return jsonify(success=False, message=str(e))
-
 
 
 @app.route('/delete_data', methods=['POST'])
@@ -966,7 +997,6 @@ def get_schedule_details(schedule_id):
 
     return jsonify(schedule)
 
-
 @app.route('/api/save_schedule_update', methods=['POST'])
 def save_schedule_update():
     data = request.get_json()
@@ -975,8 +1005,8 @@ def save_schedule_update():
     time_start = data['time_start']
     time_end = data['time_end']
     capacity = int(data['capacity'])
-    is_remote = data['is_remote_learning']
-    is_sheltered = data['is_sheltered']
+    is_remote = data['is_remote_learning'].strip().lower()
+    is_sheltered = data['is_sheltered'].strip().lower()
     board_count = int(data.get('board_count', 0))
     selected_classroom_num = data.get('selected_classroom_num')
 
@@ -996,7 +1026,6 @@ def save_schedule_update():
             str(original['time_end']) != time_end
         )
 
-        # בדיקת זמינות מרצה
         if time_changed:
             cursor.execute("SELECT lecturer_name FROM courses WHERE course_id = %s", (course_id,))
             lecturer_row = cursor.fetchone()
@@ -1019,15 +1048,24 @@ def save_schedule_update():
                 if cursor.fetchone():
                     return jsonify(success=False, message="Lecturer not available at this time")
 
-        # האם צריך להחריג את הכיתה הנוכחית?
         exclude_current_classroom = not time_changed
 
-        sheltered_filter = "AND is_sheltered = %s" if is_sheltered == "yes" else ""
-        query = f"""
+        # Build the query dynamically
+        query = """
             SELECT * FROM classrooms c
             WHERE capacity >= %s
-            AND is_remote_learning = %s
-            {sheltered_filter}
+        """
+        params = [capacity]
+
+        if is_remote not in ["", "doesn't matter"]:
+            query += " AND is_remote_learning = %s"
+            params.append(is_remote)
+
+        if is_sheltered not in ["", "doesn't matter"]:
+            query += " AND is_sheltered = %s"
+            params.append(is_sheltered)
+
+        query += """
             AND (
                 SELECT COUNT(*) FROM boards b WHERE b.classroom_id = c.classroom_id
             ) >= %s
@@ -1042,10 +1080,6 @@ def save_schedule_update():
                 )
             )
         """
-
-        params = [capacity, is_remote]
-        if is_sheltered == "yes":
-            params.append(is_sheltered)
         params += [
             board_count, schedule_id, weekday,
             time_start, time_start, time_end, time_end, time_start, time_end
@@ -1085,7 +1119,7 @@ def save_schedule_update():
 
         new_classroom_id = classroom_row['classroom_id']
 
-        # שמירת היסטוריית שינוי
+        # Save history
         cursor.execute("""
             INSERT INTO schedule_history (
                 schedule_id, course_id,
@@ -1105,12 +1139,14 @@ def save_schedule_update():
             session.get('user_id')
         ))
 
+        # Update schedule
         cursor.execute("""
             UPDATE schedules
             SET classroom_id=%s, weekday=%s, time_start=%s, time_end=%s
             WHERE schedule_id = %s
         """, (new_classroom_id, weekday, time_start, time_end, schedule_id))
 
+        # Update classroom properties
         cursor.execute("""
             UPDATE classrooms
             SET capacity=%s, is_remote_learning=%s, is_sheltered=%s
@@ -1124,8 +1160,6 @@ def save_schedule_update():
         db.commit()
 
     return jsonify(success=True)
-
-
 
 @app.route('/reports_statistics')
 def reports_schedule():
