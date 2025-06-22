@@ -21,22 +21,20 @@ app.static_folder = '../Frontend/src'
 app.secret_key = 'your_secret_key'
 
 db = mysql.connector.connect(
-    host="localhost",
-    port=3307,
-    user="root",
-    password="212165351Hala",
-    database="classroom_scheduling"
+    host="34.165.87.21",
+    user="admin",
+    password="Admin2025!", 
+    database="classroom_scheduler"
 )
 
 
 ###########################
 def get_connection():
     return mysql.connector.connect(
-    host="localhost",
-    port=3307,
-    user="root",
-    password="212165351Hala",
-    database="classroom_scheduling"
+    host="34.165.87.21",
+    user="admin",
+    password="Admin2025!", 
+    database="classroom_scheduler"
     )
 
 @app.route("/reports_statistics")
@@ -1184,6 +1182,66 @@ def delete_schedule():
         return jsonify(success=True)
     except Exception as e:
         return jsonify(success=False, message=str(e))
+
+@app.route('/api/search_alternative_slots', methods=['POST'])
+def search_alternative_slots():
+    data = request.get_json()
+    weekday    = data['weekday']
+    time_start = data['time_start']
+    time_end   = data['time_end']
+    capacity   = data['capacity']
+    remote     = data['is_remote_learning']
+    sheltered  = data['is_sheltered']
+    boards     = data['board_count']
+    allow_flexible_time = data.get('allow_flexible_time', False)
+
+    with db.cursor(dictionary=True) as cursor:
+        # שלב 1 – מציאת כיתות שיש להן קונפליקט בשיבוץ
+        conflict_query = """
+        SELECT classroom_id FROM schedules
+        WHERE weekday = %s
+        AND (
+            (time_start <= %s AND time_end > %s) OR
+            (time_start < %s AND time_end >= %s) OR
+            (time_start >= %s AND time_end <= %s)
+        )
+        """
+        cursor.execute(conflict_query, (weekday, time_start, time_start, time_end, time_end, time_start, time_end))
+        conflicts = set(row['classroom_id'] for row in cursor.fetchall())
+
+        # שלב 2 – מציאת כיתות מתאימות לפי האילוצים + building_name ו־board_count
+        classroom_query = """
+        SELECT c.classroom_id, c.classroom_num,
+               bld.building_name,
+               c.capacity, c.is_remote_learning, c.is_sheltered,
+               COUNT(br.board_id) AS board_count
+        FROM classrooms c
+        LEFT JOIN buildings bld ON c.building_id = bld.building_id
+        LEFT JOIN boards br ON c.classroom_id = br.classroom_id
+        GROUP BY c.classroom_id
+        HAVING c.capacity >= %s
+          AND (%s = '' OR c.is_remote_learning = %s)
+          AND (%s = '' OR c.is_sheltered = %s)
+          AND board_count >= %s
+        """
+        cursor.execute(classroom_query, (
+            capacity,
+            remote, remote,
+            sheltered, sheltered,
+            boards
+        ))
+        candidates = cursor.fetchall()
+
+        # שלב 3 – סינון כיתות בקונפליקט
+        available = [c for c in candidates if c['classroom_id'] not in conflicts]
+
+        if available:
+            return jsonify(success=True, available_classrooms=available)
+        elif allow_flexible_time:
+            return jsonify(success=False, message="No classrooms found at this time, but you can try another day or hour.")
+        else:
+            return jsonify(success=False, message="No available classrooms found")
+
 
 @app.route('/api/classrooms')
 def get_classrooms():

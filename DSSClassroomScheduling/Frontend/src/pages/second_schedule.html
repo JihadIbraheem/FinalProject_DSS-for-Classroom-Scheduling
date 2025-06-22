@@ -124,7 +124,6 @@
   transform: none !important;
 }
 
-
 .schedule-box:hover {
   transform: scale(1.05);
 }
@@ -163,7 +162,6 @@
   white-space: normal;
   word-wrap: break-word;
 }
-
 
 
     /* MODALS */
@@ -285,7 +283,6 @@
 
 <!-- מקרא צבעים למחלקות -->
 
-
 <div style="text-align:center; margin-top: 10px; margin-bottom: 20px;">
   <div style="display: flex; justify-content: center; flex-wrap: wrap; gap: 20px; margin-top: 8px;">
   <div class="color-picker-group">
@@ -304,7 +301,6 @@
 </div>
 
 </div>
-
 
 
 
@@ -417,6 +413,32 @@
   <img id="zoomImage" src="" alt="Zoomed">
 </div>
 
+<!-- NO-CLASSROOMS MODAL -->
+<div id="noClassroomModalBackdrop" class="modal-backdrop" onclick="closeNoClassroomModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <span onclick="closeNoClassroomModal()" style="
+      position:absolute; top:10px; right:12px;
+      font-size:29px; color:#f50b0b; font-weight:bold; cursor:pointer;">×</span>
+
+    <h3 style="margin-bottom:12px;">No available classrooms found</h3>
+    <p style="margin-bottom:18px;">
+      Would you like to search again without the <b>Remote Learning</b> &
+      <b>Sheltered</b> constraints?
+    </p>
+
+    <button class="check-available" onclick="searchIgnoringRemoteSheltered()" style="
+      background:linear-gradient(135deg,#3B82F6,#1D4ED8);
+      color:#fff; font-weight:600; padding:10px 16px;
+      border:none; border-radius:6px; cursor:pointer;">
+      Search with relaxed constraints
+    </button>
+    <button class="check-available" onclick="searchAlternativeTimes()"
+        style="margin-top: 10px; background: linear-gradient(135deg,#10B981,#059669);">
+        Search on different time/day
+    </button>
+
+  </div>
+</div>
 
   <script>
     let currentDayIndex = 0;
@@ -433,7 +455,6 @@ function getUrlParams() {
     weekday: params.get('weekday')
   };
 }
-
 
 function previousDay() {
   currentDayIndex = (currentDayIndex - 1 + weekdays.length) % weekdays.length;
@@ -473,7 +494,6 @@ function getDynamicFacultyColor(course_id) {
   if (dept_code === '214') return isColor;
   return otherColor;
 }
-
 
   const table = document.createElement('table');
   table.className = 'calendar-table';
@@ -548,7 +568,6 @@ block.addEventListener('mouseleave', () => {
   block.style.zIndex = '';
 });
 
-
         block.onclick = () => editRow(s.schedule_id);
         cell.appendChild(block);
       });
@@ -563,13 +582,11 @@ block.addEventListener('mouseleave', () => {
   container.appendChild(table);
 }
 
-
 function formatTimeToInput(value) {
   if (!value || !value.includes(':')) return '';
   const [h, m] = value.split(':');
   return `${h.padStart(2, '0')}:${m.padStart(2, '0')}`;
 }
-
 
 async function renderCalendarView() {
   const res = await fetch('/api/schedules');
@@ -673,203 +690,86 @@ async function renderCalendarView() {
       });
     }
 
+    
 async function submitEditModal() {
-  const schedule_id = document.getElementById('modal-schedule-id').value;
-  const weekday = document.getElementById('modal-weekday').value;
-  const time_start = document.getElementById('modal-start').value;
-  const time_end = document.getElementById('modal-end').value;
-  const capacity = parseInt(document.getElementById('modal-capacity').value);
-  const is_remote_learning = document.getElementById('modal-remote').value;
-  const is_sheltered = document.getElementById('modal-sheltered').value;
-  const board_count = parseInt(document.getElementById('modal-board-count').value);
-  const original = window.originalSchedule || {};
+  const schedule_id       = document.getElementById('modal-schedule-id').value;
+  const weekday           = document.getElementById('modal-weekday').value;
+  const time_start        = document.getElementById('modal-start').value;
+  const time_end          = document.getElementById('modal-end').value;
+  const capacity          = parseInt(document.getElementById('modal-capacity').value);
+  const is_remote_learning= document.getElementById('modal-remote').value;     // '' / yes / no
+  const is_sheltered      = document.getElementById('modal-sheltered').value;  // '' / yes / no
+  const board_count       = parseInt(document.getElementById('modal-board-count').value);
+  const original          = window.originalSchedule || {};
 
+  /*  ── ולידציות בסיסיות ──  */
   if (
-    weekday === original.weekday &&
-    time_start === original.time_start &&
-    time_end === original.time_end &&
-    capacity === String(original.capacity) &&
-    is_remote_learning === original.is_remote_learning &&
-    is_sheltered === original.is_sheltered &&
-    board_count === original.board_count
-  ) {
-    alert("Please change at least one field before checking available classrooms.");
-    return;
+      weekday === original.weekday &&
+      time_start === original.time_start &&
+      time_end   === original.time_end   &&
+      capacity   === Number(original.capacity) &&
+      is_remote_learning === original.is_remote_learning &&
+      is_sheltered       === original.is_sheltered &&
+      board_count        === Number(original.board_count)
+  ){
+      alert("Please change at least one field before checking available classrooms.");
+      return;
   }
 
   const start = new Date(`1970-01-01T${time_start}:00`);
-  const end = new Date(`1970-01-01T${time_end}:00`);
-  const duration = (end - start) / (1000 * 60 * 60);
-
-  if (isNaN(start.getTime()) || isNaN(end.getTime()) || start >= end) {
-    alert("Start time must be earlier than end time.");
-    return;
+  const end   = new Date(`1970-01-01T${time_end}:00`);
+  if (isNaN(start) || isNaN(end) || start >= end) { alert("Start time must be earlier than end time."); return; }
+  if ((end-start)/36e5 > 8)                           { alert("Maximum duration is 8 hours."); return; }
+  if (start.getMinutes() !== 0 || end.getMinutes() !== 0){
+      alert("Times must be on the hour (e.g. 08:00)."); return;
+  }
+  if (isNaN(board_count) || board_count < 0 || board_count > 3){
+      alert("Number of boards must be between 0 and 3."); return;
   }
 
-  if (duration > 8) {
-    alert("The duration between start and end time must not exceed 8 hours.");
-    return;
-  }
-
-  if (start.getMinutes() !== 0 || end.getMinutes() !== 0) {
-    alert("Only full hour times are allowed (e.g. 08:00, 09:00).");
-    return;
-  }
-
-  if (isNaN(board_count) || board_count < 0 || board_count > 3) {
-    alert("Number of boards must be between 0 and 3.");
-    return;
-  }
-
-  const resCap = await fetch('/api/get_max_capacity');
-  const { max_capacity } = await resCap.json();
-
-  if (capacity > max_capacity) {
-    alert(`Capacity must not exceed max classroom capacity (${max_capacity}).`);
-    return;
-  }
-
-  const data = {
-    schedule_id,
-    weekday,
-    time_start,
-    time_end,
-    capacity,
-    is_remote_learning,
-    is_sheltered,
-    board_count
+  /*  ── קריאה ל-API ──  */
+  const payload = {
+      schedule_id, weekday, time_start, time_end,
+      capacity, is_remote_learning, is_sheltered, board_count
   };
-
-  const res = await fetch('/api/save_schedule_update', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  });
-
+  const res    = await fetch('/api/save_schedule_update',{
+                     method:'POST',
+                     headers:{'Content-Type':'application/json'},
+                     body:JSON.stringify(payload)
+                 });
   const result = await res.json();
 
-  if (result.success === false && result.message === "No available classroom matches the new constraints") {
-    const classroomOptions = result.available_classrooms || [];
-    if (classroomOptions.length > 0) {
-      const modal = document.getElementById('classroomModalBackdrop');
-      const list = document.getElementById('classroom-options-list');
-      list.innerHTML = '';
+/* ── תוצאה מוצלחת ── */
+if (result.success) {
+  alert("Update successful");
+  closeModal();
+  renderBuildingSchedule();
+  return;
+}
 
-      classroomOptions.forEach(c => {
-        const li = document.createElement('li');
-        const floor = (() => {
-          const parts = c.classroom_num.split('-');
-          if (parts.length >= 3) return parseInt(parts[1], 10);
-          return '-';
-        })();
-
-        const roomNumber = (() => {
-          const parts = c.classroom_num.split('-');
-          return parts.length === 3 ? parts[2] : c.classroom_num;
-        })();
-
-        const room = c.classroom_num.split('-').pop(); 
-        const encodedBuilding = encodeURIComponent(c.building_name); 
-        const imageDir = `/uploads/img/${encodedBuilding}/${room}`;
-
-        let imagePaths = [];
-        let checkCount = 0;
-        const totalChecks = 5;
-
-        for (let i = 1; i <= totalChecks; i++) {
-          const path = `${imageDir}/${i}.jpg`;
-          const img = new Image();
-          img.onload = () => {
-            imagePaths.push(path);
-            checkCount++;
-            if (checkCount === totalChecks) renderImageGallery();
-          };
-          img.onerror = () => {
-            checkCount++;
-            if (checkCount === totalChecks) renderImageGallery();
-          };
-          img.src = path;
-        }
-
-        function renderImageGallery() {
-          if (imagePaths.length === 0) {
-            li.innerHTML = `
-              <div style="text-align:center; color:#888; margin-bottom:8px;">No images available</div>
-            `;
-          } else {
-            const imageHtml = imagePaths.map((src, idx) => `
-              <img src="${src}"
-                   alt="Classroom Image ${idx + 1}"
-                   class="popup-img"
-                   style="width: 30%; max-height: 120px; object-fit: cover; border-radius: 6px;"
-                   onclick='event.stopPropagation(); showGallery(${JSON.stringify(imagePaths)}, ${idx})' />
-            `).join('');
-
-            li.innerHTML = `
-              <div style="display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-bottom:8px;">
-                ${imageHtml}
-              </div>
-              <strong>Classroom:</strong> ${roomNumber}<br>
-              <strong>Building:</strong> ${c.building_name}<br>
-              <strong>Floor:</strong> ${floor}<br>
-              <strong>Capacity:</strong> ${c.capacity}<br>
-              <strong>Remote Learning:</strong> ${c.is_remote_learning == 1 || c.is_remote_learning === '1' ? 'Yes' : 'No'}<br>
-              <strong>Sheltered:</strong> ${c.is_sheltered == 1 || c.is_sheltered === '1' ? 'Yes' : 'No'}<br>
-              <strong>Boards:</strong> ${c.board_count}
-            `;
-          }
-
-          list.appendChild(li);
-        }
-
-        li.style.cursor = 'pointer';
-        li.style.margin = '5px 0';
-        li.style.padding = '5px';
-        li.style.border = '1px solid #ccc';
-        li.style.borderRadius = '5px';
-        li.onmouseenter = () => li.style.backgroundColor = '#eee';
-        li.onmouseleave = () => li.style.backgroundColor = 'white';
-
-        li.onclick = async (event) => {
-          if (event.target.tagName === 'IMG') return;
-          if (!confirm(`Are you sure you want to switch to classroom ${c.classroom_num}?`)) return;
-
-          data.selected_classroom_num = c.classroom_num;
-          modal.style.display = 'none';
-
-          const res2 = await fetch('/api/save_schedule_update', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-          });
-
-          const result2 = await res2.json();
-
-          if (result2.success) {
-            alert("Update successful");
-            closeModal();
-            renderBuildingSchedule();
-          } else {
-            alert("Update failed: " + result2.message);
-          }
-        };
-
-        list.appendChild(li);
-      });
-
-      modal.style.display = 'flex';
-      renderBuildingSchedule();
-      return;
-    }
+/* ── נמצאו כיתות חלופיות לפי כל האילוצים ── */
+if (result.message === "No available classroom matches the new constraints") {
+  const opts = result.available_classrooms || [];
+  if (opts.length) {
+    /* שימי ❤️: הקריאה המקורית שלך – בלי הפרמטר השני! */
+    openClassroomSelectionModal(opts);
+    return;
   }
+}
 
-  if (result.success) {
-    alert("Update successful");
-    closeModal();
-    renderBuildingSchedule();
-  } else {
-    alert("Update failed: " + result.message);
-  }
+/* ── לא נמצאה אף כיתה ── */
+if (result.message === "No available classrooms found") {
+  window.pendingEditData = {           // שומרים את הבקשה לחיפוש המרוכך
+    schedule_id, weekday, time_start, time_end,
+    capacity, is_remote_learning, is_sheltered, board_count
+  };
+  document.getElementById('noClassroomModalBackdrop').style.display = 'flex';
+  return;
+}
+
+/* ── כל שאר השגיאות ── */
+alert("Update failed: " + (result.message || "Unknown error"));
+
 }
 
 function showZoom(src) {
@@ -897,6 +797,182 @@ function showZoom(src) {
 function updateScheduleColors() {
   renderBuildingSchedule();  // תגרום לצביעה מחדש בזמן אמת
 }
+
+/* סגירת המודל הקטן */
+function closeNoClassroomModal(){
+  document.getElementById('noClassroomModalBackdrop').style.display = 'none';
+}
+
+/* חיפוש מחדש ללא Remote Learning & Sheltered */
+async function searchIgnoringRemoteSheltered(){
+  closeNoClassroomModal();
+
+  if (!window.pendingEditData){ return; }
+  const relaxedData                = { ...window.pendingEditData };
+  relaxedData.is_remote_learning   = '';   // מרוקן → מתעלם מהאילוץ
+  relaxedData.is_sheltered         = '';
+
+  const res    = await fetch('/api/save_schedule_update',{
+                     method:'POST',
+                     headers:{'Content-Type':'application/json'},
+                     body:JSON.stringify(relaxedData)
+                 });
+  const result = await res.json();
+
+  if (result.available_classrooms && result.available_classrooms.length){
+      openClassroomSelectionModal(result.available_classrooms, relaxedData);
+  }else{
+      alert("Still no classrooms available even after relaxing constraints.");
+  }
+}
+
+async function searchAlternativeTimes() {
+  const schedule_id       = document.getElementById('modal-schedule-id').value;
+  const weekday           = document.getElementById('modal-weekday').value;
+  const time_start        = document.getElementById('modal-start').value;
+  const time_end          = document.getElementById('modal-end').value;
+  const capacity          = parseInt(document.getElementById('modal-capacity').value);
+  const is_remote_learning= document.getElementById('modal-remote').value;
+  const is_sheltered      = document.getElementById('modal-sheltered').value;
+  const board_count       = parseInt(document.getElementById('modal-board-count').value);
+
+  const payload = {
+    schedule_id, weekday, time_start, time_end,
+    capacity, is_remote_learning, is_sheltered, board_count,
+    allow_flexible_time: true   // מציין לשרת להתחשב בשעה או יום גמיש
+  };
+
+  const res = await fetch('/api/search_alternative_slots', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  const result = await res.json();
+
+  if (result.success && result.available_classrooms?.length > 0) {
+    openClassroomSelectionModal(result.available_classrooms);
+  } else {
+    alert(result.message || "No available classrooms found on different times or days.");
+  }
+}
+
+/* ----- RICH CLASSROOM SELECTION MODAL (with images) ----- */
+function openClassroomSelectionModal(classroomOptions, dataPayload = null) {
+  const modal = document.getElementById('classroomModalBackdrop');
+  const list  = document.getElementById('classroom-options-list');
+  list.innerHTML = '';
+
+  classroomOptions.forEach(c => {
+    const li = document.createElement('li');
+
+    /* ── פירוק מספר קומה וחדר ── */
+    const parts      = c.classroom_num.split('-');
+    const floor      = parts.length === 3 ? parseInt(parts[1], 10) : '-';
+    const roomNumber = parts.length === 3 ? parts[2]               : c.classroom_num;
+
+    /* ── ניסיון לטעון עד 5 תמונות ── */
+    const encodedBld = encodeURIComponent(c.building_name);
+    const baseDir    = `/uploads/img/${encodedBld}/${roomNumber}`;
+    const MAX_CHECKS = 5;
+    const imagePaths = [];
+
+    let checksDone = 0;
+    for (let i = 1; i <= MAX_CHECKS; i++) {
+      const src = `${baseDir}/${i}.jpg`;
+      const img = new Image();
+      img.onload  = () => { imagePaths.push(src); afterCheck(); };
+      img.onerror = afterCheck;
+      img.src = src;
+    }
+    function afterCheck() {
+      checksDone++;
+      if (checksDone === MAX_CHECKS) renderLi();
+    }
+
+    /* ── בניית ה-li לאחר שכל התמונות נבדקו ── */
+    function renderLi() {
+      li.innerHTML = '';
+
+      /* תצוגת תמונות */
+      const gallery = document.createElement('div');
+      gallery.style.display = 'flex';
+      gallery.style.flexWrap = 'wrap';
+      gallery.style.gap = '8px';
+      gallery.style.justifyContent = 'center';
+      gallery.style.marginBottom = '8px';
+
+      if (imagePaths.length === 0) {
+        gallery.innerHTML = `<div style="color:#888;">No images available</div>`;
+      } else {
+        imagePaths.forEach((src, idx) => {
+          const img = document.createElement('img');
+          img.src = src;
+          img.alt = `Classroom Image ${idx+1}`;
+          img.style.width      = '30%';
+          img.style.maxHeight  = '120px';
+          img.style.objectFit  = 'cover';
+          img.style.borderRadius = '6px';
+          img.className = 'popup-img';
+          img.onclick = e => { e.stopPropagation(); showGallery(imagePaths, idx); };
+          gallery.appendChild(img);
+        });
+      }
+      li.appendChild(gallery);
+
+      /* פרטים טקסטואליים */
+      li.insertAdjacentHTML('beforeend', `
+        <strong>Classroom:</strong> ${roomNumber}<br>
+        <strong>Building:</strong> ${c.building_name}<br>
+        <strong>Floor:</strong> ${floor}<br>
+        <strong>Capacity:</strong> ${c.capacity}<br>
+        <strong>Remote Learning:</strong> ${c.is_remote_learning == 1 || c.is_remote_learning === '1' ? 'Yes' : 'No'}<br>
+        <strong>Sheltered:</strong> ${c.is_sheltered == 1 || c.is_sheltered === '1' ? 'Yes' : 'No'}<br>
+        <strong>Boards:</strong> ${c.board_count}
+      `);
+
+      li.style.cursor       = 'pointer';
+      li.style.margin       = '6px 0';
+      li.style.padding      = '6px';
+      li.style.border       = '1px solid #ddd';
+      li.style.borderRadius = '6px';
+      li.onmouseenter = () => li.style.backgroundColor = '#F3F4F6';
+      li.onmouseleave = () => li.style.backgroundColor = 'white';
+
+      /* לחיצה = בחירת כיתה */
+      li.onclick = async e => {
+        if (e.target.tagName === 'IMG') return;   // לא ללחוץ כשנלחץ על תמונה
+
+        const confirmMsg = `Are you sure you want to switch to classroom ${c.classroom_num}?`;
+        if (!confirm(confirmMsg)) return;
+
+        /* אם לא עבר dataPayload – משתמשים ב-payload הגלובלי */
+        const payload = dataPayload ? { ...dataPayload } : (window.pendingEditData || {});
+        payload.selected_classroom_num = c.classroom_num;
+        modal.style.display = 'none';
+
+        const res = await fetch('/api/save_schedule_update', {
+          method : 'POST',
+          headers: { 'Content-Type':'application/json' },
+          body   : JSON.stringify(payload)
+        });
+        const result = await res.json();
+        if (result.success) {
+          alert('Update successful');
+          closeModal();
+          renderBuildingSchedule();
+        } else {
+          alert('Update failed: ' + (result.message || 'Unknown error'));
+        }
+      };
+
+      list.appendChild(li);
+    }
+  });
+
+  modal.style.display = 'flex';
+}
+
 
 async function editRow(schedule_id) {
   const res = await fetch(`/api/schedule_details/${schedule_id}`);
@@ -980,7 +1056,6 @@ function updateCategoryColor(category, color) {
     editRow(schedule_id);
   }
 };
-
 
 
     async function loadSchedules() {
@@ -1132,9 +1207,10 @@ function closeGallery() {
 
 
 
-
   <footer>
     <p>&copy; 2025 Classroom Scheduling System</p>
   </footer>
 </body>
 </html>
+
+
