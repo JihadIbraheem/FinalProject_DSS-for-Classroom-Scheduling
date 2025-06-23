@@ -832,14 +832,18 @@ async function searchAlternativeTimes() {
   const time_start        = document.getElementById('modal-start').value;
   const time_end          = document.getElementById('modal-end').value;
   const capacity          = parseInt(document.getElementById('modal-capacity').value);
-  const is_remote_learning= document.getElementById('modal-remote').value;
-  const is_sheltered      = document.getElementById('modal-sheltered').value;
   const board_count       = parseInt(document.getElementById('modal-board-count').value);
 
   const payload = {
-    schedule_id, weekday, time_start, time_end,
-    capacity, is_remote_learning, is_sheltered, board_count,
-    allow_flexible_time: true   // מציין לשרת להתחשב בשעה או יום גמיש
+    schedule_id,
+    weekday,
+    time_start,
+    time_end,
+    capacity,
+    board_count,
+    is_remote_learning: "",  // התעלמות
+    is_sheltered: "",        // התעלמות
+    allow_flexible_time: true
   };
 
   const res = await fetch('/api/search_alternative_slots', {
@@ -851,29 +855,43 @@ async function searchAlternativeTimes() {
   const result = await res.json();
 
   if (result.success && result.available_classrooms?.length > 0) {
-    openClassroomSelectionModal(result.available_classrooms);
+    const enrichedPayload = {
+      ...payload,
+      fromAlternativeSearch: true,
+      time_start: result.time_start,
+      time_end: result.time_end,
+      weekday: result.weekday
+    };
+    openClassroomSelectionModal(result.available_classrooms, enrichedPayload);
   } else {
     alert(result.message || "No available classrooms found on different times or days.");
   }
 }
 
+
 /* ----- RICH CLASSROOM SELECTION MODAL (with images) ----- */
 function openClassroomSelectionModal(classroomOptions, dataPayload = null) {
+  // סגירת מודל קודם אם פתוח
+  const previousModal = document.getElementById('noClassroomModalBackdrop');
+  if (previousModal) previousModal.style.display = 'none';
+
   const modal = document.getElementById('classroomModalBackdrop');
-  const list  = document.getElementById('classroom-options-list');
+  const list = document.getElementById('classroom-options-list');
   list.innerHTML = '';
+
+  const showTimeInfo = dataPayload?.fromAlternativeSearch;
 
   classroomOptions.forEach(c => {
     const li = document.createElement('li');
 
-    /* ── פירוק מספר קומה וחדר ── */
-    const parts      = c.classroom_num.split('-');
-    const floor      = parts.length === 3 ? parseInt(parts[1], 10) : '-';
-    const roomNumber = parts.length === 3 ? parts[2]               : c.classroom_num;
+    // ── פירוק מספר קומה וחדר ──
+    const parts = c.classroom_num.split('-');
+    const floor = parts.length === 3 ? parseInt(parts[1], 10) : '-';
+    const roomNumber = parts.length === 3 ? parts[2] : c.classroom_num;
 
-    /* ── ניסיון לטעון עד 5 תמונות ── */
+    // ── ניסיון לטעון עד 5 תמונות ──
     const encodedBld = encodeURIComponent(c.building_name);
-    const baseDir    = `/uploads/img/${encodedBld}/${roomNumber}`;
+    const baseDir = `/uploads/img/${encodedBld}/${roomNumber}`;
     const MAX_CHECKS = 5;
     const imagePaths = [];
 
@@ -881,20 +899,21 @@ function openClassroomSelectionModal(classroomOptions, dataPayload = null) {
     for (let i = 1; i <= MAX_CHECKS; i++) {
       const src = `${baseDir}/${i}.jpg`;
       const img = new Image();
-      img.onload  = () => { imagePaths.push(src); afterCheck(); };
+      img.onload = () => { imagePaths.push(src); afterCheck(); };
       img.onerror = afterCheck;
       img.src = src;
     }
+
     function afterCheck() {
       checksDone++;
       if (checksDone === MAX_CHECKS) renderLi();
     }
 
-    /* ── בניית ה-li לאחר שכל התמונות נבדקו ── */
+    // ── בניית ה-li לאחר שכל התמונות נבדקו ──
     function renderLi() {
       li.innerHTML = '';
 
-      /* תצוגת תמונות */
+      // תצוגת תמונות
       const gallery = document.createElement('div');
       gallery.style.display = 'flex';
       gallery.style.flexWrap = 'wrap';
@@ -908,10 +927,10 @@ function openClassroomSelectionModal(classroomOptions, dataPayload = null) {
         imagePaths.forEach((src, idx) => {
           const img = document.createElement('img');
           img.src = src;
-          img.alt = `Classroom Image ${idx+1}`;
-          img.style.width      = '30%';
-          img.style.maxHeight  = '120px';
-          img.style.objectFit  = 'cover';
+          img.alt = `Classroom Image ${idx + 1}`;
+          img.style.width = '30%';
+          img.style.maxHeight = '120px';
+          img.style.objectFit = 'cover';
           img.style.borderRadius = '6px';
           img.className = 'popup-img';
           img.onclick = e => { e.stopPropagation(); showGallery(imagePaths, idx); };
@@ -920,7 +939,14 @@ function openClassroomSelectionModal(classroomOptions, dataPayload = null) {
       }
       li.appendChild(gallery);
 
-      /* פרטים טקסטואליים */
+      // פרטים טקסטואליים
+      let timeInfoHTML = '';
+      if (showTimeInfo && dataPayload?.weekday && dataPayload?.time_start && dataPayload?.time_end) {
+        timeInfoHTML = `
+          <br><strong>Suggested:</strong> ${dataPayload.weekday}, ${dataPayload.time_start}–${dataPayload.time_end}
+        `;
+      }
+
       li.insertAdjacentHTML('beforeend', `
         <strong>Classroom:</strong> ${roomNumber}<br>
         <strong>Building:</strong> ${c.building_name}<br>
@@ -929,36 +955,36 @@ function openClassroomSelectionModal(classroomOptions, dataPayload = null) {
         <strong>Remote Learning:</strong> ${c.is_remote_learning == 1 || c.is_remote_learning === '1' ? 'Yes' : 'No'}<br>
         <strong>Sheltered:</strong> ${c.is_sheltered == 1 || c.is_sheltered === '1' ? 'Yes' : 'No'}<br>
         <strong>Boards:</strong> ${c.board_count}
+        ${timeInfoHTML}
       `);
 
-      li.style.cursor       = 'pointer';
-      li.style.margin       = '6px 0';
-      li.style.padding      = '6px';
-      li.style.border       = '1px solid #ddd';
+      li.style.cursor = 'pointer';
+      li.style.margin = '6px 0';
+      li.style.padding = '6px';
+      li.style.border = '1px solid #ddd';
       li.style.borderRadius = '6px';
       li.onmouseenter = () => li.style.backgroundColor = '#F3F4F6';
       li.onmouseleave = () => li.style.backgroundColor = 'white';
 
-      /* לחיצה = בחירת כיתה */
+      // לחיצה = בחירת כיתה
       li.onclick = async e => {
-        if (e.target.tagName === 'IMG') return;   // לא ללחוץ כשנלחץ על תמונה
+        if (e.target.tagName === 'IMG') return;
 
         const confirmMsg = `Are you sure you want to switch to classroom ${c.classroom_num}?`;
         if (!confirm(confirmMsg)) return;
 
-        /* אם לא עבר dataPayload – משתמשים ב-payload הגלובלי */
         const payload = dataPayload ? { ...dataPayload } : (window.pendingEditData || {});
         payload.selected_classroom_num = c.classroom_num;
         modal.style.display = 'none';
 
         const res = await fetch('/api/save_schedule_update', {
-          method : 'POST',
-          headers: { 'Content-Type':'application/json' },
-          body   : JSON.stringify(payload)
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
         });
         const result = await res.json();
         if (result.success) {
-          alert('Update successful');
+          alert('Update successful'); 
           closeModal();
           renderBuildingSchedule();
         } else {
@@ -972,6 +998,7 @@ function openClassroomSelectionModal(classroomOptions, dataPayload = null) {
 
   modal.style.display = 'flex';
 }
+
 
 
 async function editRow(schedule_id) {

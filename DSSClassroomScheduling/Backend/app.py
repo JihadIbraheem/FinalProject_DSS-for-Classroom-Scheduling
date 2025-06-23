@@ -1182,65 +1182,95 @@ def delete_schedule():
         return jsonify(success=True)
     except Exception as e:
         return jsonify(success=False, message=str(e))
+    
 
 @app.route('/api/search_alternative_slots', methods=['POST'])
 def search_alternative_slots():
     data = request.get_json()
-    weekday    = data['weekday']
+    hebrew_weekday = data['weekday']
     time_start = data['time_start']
-    time_end   = data['time_end']
-    capacity   = data['capacity']
-    remote     = data['is_remote_learning']
-    sheltered  = data['is_sheltered']
-    boards     = data['board_count']
+    time_end = data['time_end']
+    capacity = data['capacity']
+    boards = int(data.get('board_count') or 0)
     allow_flexible_time = data.get('allow_flexible_time', False)
 
+    weekday_map = {
+        'א': 'Sunday',
+        'ב': 'Monday',
+        'ג': 'Tuesday',
+        'ד': 'Wednesday',
+        'ה': 'Thursday',
+        'ו': 'Friday'
+    }
+
+    hebrew_weekday_clean = hebrew_weekday.replace("'", "").strip()
+    weekday = weekday_map.get(hebrew_weekday_clean)
+
+    if weekday is None:
+        return jsonify(success=False, message="Invalid Hebrew weekday provided"), 400
+
+    start_hour = int(time_start.split(":")[0])
+    end_hour = int(time_end.split(":")[0])
+    duration = end_hour - start_hour
+
+    # רשימת ימים באנגלית (כוללת גם Friday)
+    weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+    weekday_index = weekdays.index(weekday)
+    search_days = weekdays[:weekday_index] + weekdays[weekday_index+1:]
+
     with db.cursor(dictionary=True) as cursor:
-        # שלב 1 – מציאת כיתות שיש להן קונפליקט בשיבוץ
-        conflict_query = """
-        SELECT classroom_id FROM schedules
-        WHERE weekday = %s
-        AND (
-            (time_start <= %s AND time_end > %s) OR
-            (time_start < %s AND time_end >= %s) OR
-            (time_start >= %s AND time_end <= %s)
-        )
-        """
-        cursor.execute(conflict_query, (weekday, time_start, time_start, time_end, time_end, time_start, time_end))
-        conflicts = set(row['classroom_id'] for row in cursor.fetchall())
 
-        # שלב 2 – מציאת כיתות מתאימות לפי האילוצים + building_name ו־board_count
-        classroom_query = """
-        SELECT c.classroom_id, c.classroom_num,
-               bld.building_name,
-               c.capacity, c.is_remote_learning, c.is_sheltered,
-               COUNT(br.board_id) AS board_count
-        FROM classrooms c
-        LEFT JOIN buildings bld ON c.building_id = bld.building_id
-        LEFT JOIN boards br ON c.classroom_id = br.classroom_id
-        GROUP BY c.classroom_id
-        HAVING c.capacity >= %s
-          AND (%s = '' OR c.is_remote_learning = %s)
-          AND (%s = '' OR c.is_sheltered = %s)
-          AND board_count >= %s
-        """
-        cursor.execute(classroom_query, (
-            capacity,
-            remote, remote,
-            sheltered, sheltered,
-            boards
-        ))
-        candidates = cursor.fetchall()
+        def find_available(weekday_val, start_hour_val):
+            new_time_start = f"{start_hour_val:02}:00"
+            new_time_end = f"{start_hour_val + duration:02}:00"
 
-        # שלב 3 – סינון כיתות בקונפליקט
-        available = [c for c in candidates if c['classroom_id'] not in conflicts]
+            # שלב 1 – קונפליקטים
+            cursor.execute("""
+                SELECT classroom_id FROM schedules
+                WHERE weekday = %s
+                AND (
+                    (time_start <= %s AND time_end > %s) OR
+                    (time_start < %s AND time_end >= %s) OR
+                    (time_start >= %s AND time_end <= %s)
+                )
+            """, (weekday_val, new_time_start, new_time_start, new_time_end, new_time_end, new_time_start, new_time_end))
+            conflicts = set(row['classroom_id'] for row in cursor.fetchall())
 
-        if available:
-            return jsonify(success=True, available_classrooms=available)
-        elif allow_flexible_time:
-            return jsonify(success=False, message="No classrooms found at this time, but you can try another day or hour.")
-        else:
-            return jsonify(success=False, message="No available classrooms found")
+            # שלב 2 – כיתות מתאימות
+            cursor.execute("""
+                SELECT c.classroom_id, c.classroom_num,
+                       bld.building_name,
+                       c.capacity, c.is_remote_learning, c.is_sheltered,
+                       COUNT(br.board_id) AS board_count
+                FROM classrooms c
+                LEFT JOIN buildings bld ON c.building_id = bld.building_id
+                LEFT JOIN boards br ON c.classroom_id = br.classroom_id
+                GROUP BY c.classroom_id
+                HAVING c.capacity >= %s AND board_count >= %s
+            """, (capacity, boards))
+
+            candidates = cursor.fetchall()
+            available = [c for c in candidates if c['classroom_id'] not in conflicts]
+
+            return available, new_time_start, new_time_end, weekday_val
+
+        if allow_flexible_time:
+            # נסרוק שעות שונות באותו יום
+            for hour in range(8, 18 - duration + 1):
+                available, t_start, t_end, wd = find_available(weekday, hour)
+                if available:
+                    return jsonify(success=True, available_classrooms=available,
+                                   time_start=t_start, time_end=t_end, weekday=wd)
+
+            # נסרוק ימים אחרים
+            for day in search_days:
+                for hour in range(8, 18 - duration + 1):
+                    available, t_start, t_end, wd = find_available(day, hour)
+                    if available:
+                        return jsonify(success=True, available_classrooms=available,
+                                       time_start=t_start, time_end=t_end, weekday=wd)
+
+        return jsonify(success=False, message="No available classrooms found on different days or hours.")
 
 
 @app.route('/api/classrooms')
