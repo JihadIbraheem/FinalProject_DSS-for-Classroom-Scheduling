@@ -170,7 +170,6 @@ def default_home():
 @app.route('/manual_schedule', methods=['POST'])
 def manual_schedule():
     if is_data_existing():
-        flash("Please delete existing data before adding new schedule manually.")
         return redirect(url_for('upload'))
 
     course_names = request.form.getlist('course_name[]')
@@ -544,11 +543,10 @@ def uploaded_file(filename):
 
 @app.route('/upload', methods=['GET', 'POST'])
 def upload():
-    upload_status = None  # New flag
+    upload_status = None  
 
     if request.method == 'POST':
         if is_data_existing():
-            flash('Data already exists. Please delete existing data before uploading a new file.')
             return redirect(url_for('upload'))
 
         file = request.files['file']
@@ -679,7 +677,6 @@ def delete_data():
         return redirect(url_for('upload'))
 
     delete_existing_data()
-    flash('Existing data deleted successfully!')
     return redirect(url_for('upload'))
 
 
@@ -723,7 +720,6 @@ def login():
 
         if user:
             session['user_id'] = user['user_id']
-            flash('Logged in successfully!')
             return redirect(url_for('home'))
         else:
             flash('Invalid username or password!')
@@ -998,6 +994,8 @@ def get_schedule_details(schedule_id):
 @app.route('/api/save_schedule_update', methods=['POST'])
 def save_schedule_update():
     data = request.get_json()
+    if 'schedule_id' not in data:
+        return jsonify(success=False, message="Missing schedule_id in request"), 400
     schedule_id = data['schedule_id']
     weekday = data['weekday']
     time_start = data['time_start']

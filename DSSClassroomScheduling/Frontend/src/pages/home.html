@@ -86,10 +86,15 @@
   </style>
 </head>
 <body>
-  <header>
-    <div>Classroom Scheduling System</div>
-    <a href="/logout" class="logout-button">Log Out</a>
-  </header>
+<header style="background:#1E3A8A; color:#fff; padding:1rem 2rem; display:flex; justify-content:space-between; align-items:center; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+  <a href="/home" class="home-link" style="font-size:1.25rem; font-weight:600; color:inherit; text-decoration:none;">Classroom Scheduling System</a>
+  <a href="/logout" class="logout-button" style="background:#ffffff; color:#1E3A8A; padding:6px 12px; border-radius:4px; font-weight:bold; transition:all 0.3s ease; text-decoration:none;"
+     onmouseover="this.style.backgroundColor='#e5e7eb'; this.style.color='#111827'; this.style.boxShadow='0 2px 6px rgba(0, 0, 0, 0.15)'"
+     onmouseout="this.style.backgroundColor='#ffffff'; this.style.color='#1E3A8A'; this.style.boxShadow='none'">
+    Log Out
+  </a>
+</header>
+
 
   <main>
     <h2>Welcome, {{ user_first_name if user_first_name else 'User' }}</h2>
@@ -116,7 +121,7 @@
       </div>
       <div class="card">
         <h3>Reports and Statistics</h3>
-        <p>View visualizations and generate reports</p>
+        <p>Generate reports</p>
         <a href="/reports_statistics">Open View</a>
       </div>
       <div class="card">
