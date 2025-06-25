@@ -29,137 +29,218 @@ db = mysql.connector.connect(
 
 
 ###########################
+
 def get_connection():
     return mysql.connector.connect(
-    host="34.165.87.21",
-    user="admin",
-    password="Admin2025!", 
-    database="classroom_scheduler"
+        host="34.165.87.21",
+        user="admin",
+        password="Admin2025!",
+        database="classroom_scheduler"
     )
 
-@app.route("/reports_statistics")
-def reports_statistics():
+# API to fetch buildings list for frontend dropdown
+@app.route('/api/buildings', methods=['GET'])
+def fetch_buildings_for_dropdown():
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM buildings")
+    cursor.execute("SELECT building_id, building_name FROM buildings")
     buildings = cursor.fetchall()
     cursor.close()
     conn.close()
-    return render_template("reports_statistics.html", buildings=buildings)
+    return jsonify(buildings)
 
+# Reports route to render the frontend
+@app.route('/reports_statistics', methods=['GET'])
+def reports_statistics():
+    return render_template('reports_statistics.html')
+
+# Main Report Generation Handler
 @app.route('/generate_report', methods=['POST'])
 def generate_report():
     report_type = request.form.get('report_type')
-    building_id = request.form.get('building_id')
-    day = request.form.get('day')
-    start_time = request.form.get('start_time')
-    end_time = request.form.get('end_time')
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    output = io.BytesIO()
+
+    if report_type == 'utilization':
+        cursor.execute("SELECT COUNT(*) AS total FROM classrooms")
+        total = cursor.fetchone()['total']
+
+        cursor.execute("SELECT COUNT(DISTINCT classroom_id) AS used FROM schedules")
+        used = cursor.fetchone()['used']
+
+        cursor.execute("""
+            SELECT AVG(cnt) as avg_daily FROM (
+                SELECT COUNT(*) as cnt FROM schedules GROUP BY weekday
+            ) sub
+        """)
+        avg_daily = round(cursor.fetchone()['avg_daily'], 2)
+
+        cursor.execute("""
+            SELECT HOUR(time_start) AS hour, COUNT(*) AS cnt
+            FROM schedules
+            GROUP BY hour
+            ORDER BY cnt DESC LIMIT 1
+        """)
+        peak_hour = f"{cursor.fetchone()['hour']}:00"
+
+        cursor.execute("""
+            SELECT COUNT(*) AS underutilized FROM classrooms
+            WHERE classroom_id NOT IN (SELECT DISTINCT classroom_id FROM schedules)
+        """)
+        underutilized = cursor.fetchone()['underutilized']
+
+        summary_df = pd.DataFrame([{
+            "Total Classrooms": total,
+            "Utilized Classrooms": used,
+            "Average Daily Usage Rate": avg_daily,
+            "Peak Usage Hour": peak_hour,
+            "Underutilized Classrooms": underutilized
+        }])
+
+        building_df = pd.read_sql("""
+            SELECT 
+                b.building_name,
+                COUNT(DISTINCT c.classroom_id) AS `# Classrooms`,
+                ROUND(SUM(CASE WHEN s.schedule_id IS NOT NULL THEN 1 ELSE 0 END)/6, 2) AS `Avg. Utilization`,
+                (
+                    SELECT s2.weekday
+                    FROM schedules s2
+                    JOIN classrooms c2 ON s2.classroom_id = c2.classroom_id
+                    WHERE c2.building_id = b.building_id
+                    GROUP BY s2.weekday
+                    ORDER BY COUNT(*) DESC
+                    LIMIT 1
+                ) AS `Peak Day`,
+                GROUP_CONCAT(DISTINCT IF(s.schedule_id IS NULL, c.classroom_num, NULL)) AS `Underutilized Room`
+            FROM buildings b
+            JOIN classrooms c ON c.building_id = b.building_id
+            LEFT JOIN schedules s ON s.classroom_id = c.classroom_id
+            GROUP BY b.building_id
+        """, conn)
+
+        time_df = pd.read_sql("""
+            SELECT 
+                CONCAT(LPAD(HOUR(time_start), 2, '0'), ':00-', LPAD(HOUR(time_end), 2, '0'), ':00') AS `Time Slot`,
+                weekday, COUNT(*) AS 'usage'
+            FROM schedules
+            WHERE HOUR(time_start) BETWEEN 8 AND 21
+            GROUP BY `Time Slot`, weekday
+        """, conn)
+        time_pivot = time_df.pivot(index="Time Slot", columns="weekday", values="usage").fillna(0)
+
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            summary_df.to_excel(writer, sheet_name='Summary', index=False)
+            building_df.to_excel(writer, sheet_name='Building Breakdown', index=False)
+            time_pivot.to_excel(writer, sheet_name='Time Slot Utilization')
+
+    elif report_type == 'estimated_students':
+        df = pd.read_sql("""
+    SELECT 
+        b.building_name AS `Building Name`,
+        SUM(c2.students_num) AS `Estimated Students`,
+        ROUND(AVG(c2.students_num), 2) AS `Average per Room`,
+        pd.peak_day AS `Peak Day`
+    FROM buildings b
+    JOIN classrooms c ON c.building_id = b.building_id
+    JOIN schedules s ON s.classroom_id = c.classroom_id
+    JOIN courses c2 ON s.course_id = c2.course_id
+    LEFT JOIN (
+        SELECT building_id, weekday AS peak_day
+        FROM (
+            SELECT c.building_id, s.weekday,
+                   ROW_NUMBER() OVER (PARTITION BY c.building_id ORDER BY COUNT(*) DESC) as rn
+            FROM classrooms c
+            JOIN schedules s ON s.classroom_id = c.classroom_id
+            GROUP BY c.building_id, s.weekday
+        ) sub
+        WHERE rn = 1
+    ) pd ON pd.building_id = b.building_id
+    GROUP BY b.building_id, pd.peak_day
+""", conn)
+
+
+        df.to_excel(output, index=False)
+
+    elif report_type == 'reschedule_needed':
+        df = pd.read_sql("""
+            SELECT * FROM schedules
+            WHERE classroom_id NOT IN (SELECT classroom_id FROM classrooms)
+        """, conn)
+        df.to_excel(output, index=False)
+
+    elif report_type == 'history':
+        df = pd.read_sql("SELECT * FROM schedule_history", conn)
+        df.to_excel(output, index=False)
+
+    else:
+        return "Invalid report type", 400
+
+
+# Visualization API: Sheltered classroom status
+@app.route('/api/classroom_shelter_status')
+def api_classroom_shelter_status():
+    building_id = request.args.get('building_id')
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("""
+        SELECT classroom_num AS Classroom, is_sheltered AS Sheltered
+        FROM classrooms
+        WHERE building_id = %s
+    """, (building_id,))
+    results = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return jsonify(results)
+
+
+# Visualization API: Estimated students per building by day/time
+@app.route('/api/estimated_students_chart')
+def api_estimated_students_chart():
+    day = request.args.get('day')
+    start = request.args.get('start_time')
+    end = request.args.get('end_time')
 
     conn = get_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        output = io.BytesIO()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("""
+        SELECT b.building_name AS Building, SUM(c.students_num) AS EstimatedStudents
+        FROM schedules s
+        JOIN classrooms cl ON s.classroom_id = cl.classroom_id
+        JOIN buildings b ON cl.building_id = b.building_id
+        JOIN courses c ON s.course_id = c.course_id
+        WHERE s.weekday = %s AND s.time_start >= %s AND s.time_end <= %s
+        GROUP BY b.building_id
+    """, (day, start, end))
+    results = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return jsonify(results)
 
-        if report_type == 'utilization':
-            cursor.execute("SELECT COUNT(*) AS total FROM classrooms")
-            total = cursor.fetchone()['total']
-            cursor.execute("SELECT COUNT(DISTINCT classroom_id) AS used FROM schedules")
-            used = cursor.fetchone()['used']
-            cursor.execute("""
-                SELECT AVG(used_count) as avg_daily
-                FROM (
-                    SELECT COUNT(DISTINCT classroom_id) AS used_count, weekday
-                    FROM schedules GROUP BY weekday
-                ) as daily
-            """)
-            avg_daily = round(cursor.fetchone()['avg_daily'], 2)
-            cursor.execute("""
-                SELECT HOUR(time_start) as hour, COUNT(*) as count
-                FROM schedules GROUP BY hour ORDER BY count DESC LIMIT 1
-            """)
-            peak_hour = f"{cursor.fetchone()['hour']}:00"
-            cursor.execute("""
-                SELECT COUNT(*) AS underutilized FROM classrooms
-                WHERE classroom_id NOT IN (SELECT DISTINCT classroom_id FROM schedules)
-            """)
-            underutilized = cursor.fetchone()['underutilized']
 
-            summary_df = pd.DataFrame([{
-                "Total Classrooms": total,
-                "Utilized Classrooms": used,
-                "Average Daily Usage Rate": avg_daily,
-                "Peak Usage Hour": peak_hour,
-                "Underutilized Classrooms": underutilized
-            }])
+# Visualization API: Peak usage chart (group by hour & weekday)
+@app.route('/api/peak_usage_chart')
+def api_peak_usage_chart():
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("""
+        SELECT 
+            CONCAT(LPAD(HOUR(time_start), 2, '0'), ':00-', LPAD(HOUR(time_end), 2, '0'), ':00') AS TimeSlot,
+            weekday AS Weekday,
+            COUNT(*) AS Count
+        FROM schedules
+        WHERE HOUR(time_start) BETWEEN 8 AND 21
+        GROUP BY TimeSlot, Weekday
+    """)
+    results = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return jsonify(results)
 
-            building_df = pd.read_sql("""
-                SELECT b.building_name, COUNT(c.classroom_id) AS classrooms,
-                    ROUND(AVG(s_count), 2) AS avg_utilization,
-                    weekday AS peak_day,
-                    GROUP_CONCAT(IF(s_count=0, c.classroom_num, NULL)) AS underutilized_rooms
-                FROM buildings b
-                JOIN classrooms c ON c.building_id = b.building_id
-                LEFT JOIN (
-                    SELECT classroom_id, COUNT(*) AS s_count, weekday
-                    FROM schedules GROUP BY classroom_id, weekday
-                ) s ON s.classroom_id = c.classroom_id
-                GROUP BY b.building_id, s.weekday
-            """, conn)
 
-            time_slot_df = pd.read_sql("""
-                SELECT 
-                    CONCAT(LPAD(HOUR(time_start), 2, '0'), ':00-', LPAD(HOUR(time_end), 2, '0'), ':00') AS time_slot,
-                    weekday, COUNT(*) AS 'usage'
-                FROM schedules
-                WHERE HOUR(time_start) BETWEEN 8 AND 21
-                GROUP BY time_slot, weekday
-            """, conn).pivot(index='time_slot', columns='weekday', values='usage').fillna(0)
-
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                summary_df.to_excel(writer, sheet_name='Summary', index=False)
-                building_df.to_excel(writer, sheet_name='Building Breakdown', index=False)
-                time_slot_df.to_excel(writer, sheet_name='Time Slot Usage')
-
-        elif report_type == 'estimated_students':
-            df = pd.read_sql("""
-                SELECT b.building_name,
-                    SUM(c2.students_num) AS estimated_students,
-                    ROUND(AVG(c2.students_num), 2) AS avg_per_room,
-                    s.weekday AS peak_day
-                FROM buildings b
-                JOIN classrooms c ON c.building_id = b.building_id
-                JOIN schedules s ON s.classroom_id = c.classroom_id
-                JOIN courses c2 ON c2.course_id = s.course_id
-                GROUP BY b.building_id, s.weekday
-            """, conn)
-            df.to_excel(output, index=False)
-
-        elif report_type == 'reschedule_needed':
-            df = pd.read_sql("""
-                SELECT * FROM schedules s
-                WHERE s.classroom_id NOT IN (SELECT classroom_id FROM classrooms)
-            """, conn)
-            df.to_excel(output, index=False)
-
-        elif report_type == 'history':
-            df = pd.read_sql("SELECT * FROM schedule_history", conn)
-            df.to_excel(output, index=False)
-
-        else:
-            return "Invalid report type", 400
-
-        output.seek(0)
-        return send_file(
-            output,
-            download_name=f"{report_type}_report.xlsx",
-            as_attachment=True,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-
-    finally:
-        cursor.close()
-        conn.close()
-
+    conn.close()
+    output.seek(0)
+    return send_file(output, download_name=f"{report_type}_report.xlsx", as_attachment=True)
 ###########################
 
 

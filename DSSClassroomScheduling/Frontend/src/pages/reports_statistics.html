@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!--<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
@@ -124,19 +124,15 @@
       <label for="reportType">Select Report Type:</label>
       <select name="report_type" id="reportType" required>
         <option value="">-- Select Report --</option>
-  <option value="utilization">Classroom Utilization</option>
-  <option value="estimated_students">Estimated Student Numbers</option>
-  <option value="reschedule_needed">Lessons Needing Rescheduling</option>
-  <option value="history">Changes & Rescheduling History</option>
+        <option value="utilization">Classroom Utilization</option>
+        <option value="estimated_students">Estimated Student Numbers</option>
+        <option value="reschedule_needed">Lessons Needing Rescheduling</option>
+        <option value="history">Changes & Rescheduling History</option>
       </select>
 
       <div id="buildingFilter" class="filters">
         <label for="building">Select Building:</label>
-        <select name="building_id" id="building">
-          {% for building in buildings %}
-            <option value="{{ building.building_id }}">{{ building.building_name }}</option>
-          {% endfor %}
-        </select>
+        <select name="building_id" id="building"></select>
       </div>
 
       <div id="timeFilter" class="filters">
@@ -148,8 +144,6 @@
           <option value="ד'">ד'</option>
           <option value="ה'">ה'</option>
           <option value="ו'">ו'</option>
-
-
         </select>
 
         <label for="startTime">Start Time:</label>
@@ -187,6 +181,429 @@
         timeFilter.style.display = 'none';
       }
     });
+
+    window.onload = function() {
+      fetch('/api/buildings')
+        .then(response => response.json())
+        .then(buildings => {
+          const buildingSelect = document.getElementById('building');
+          buildingSelect.innerHTML = ''; // Clear old options
+          buildings.forEach(building => {
+            const option = document.createElement('option');
+            option.value = building.building_id;
+            option.textContent = building.building_name;
+            buildingSelect.appendChild(option);
+          });
+        })
+        .catch(error => {
+          console.error('Error fetching buildings:', error);
+        });
+    };
+  </script>
+</body>
+</html> -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reports and Statistics - SmartCampus Scheduler</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Poppins', sans-serif; }
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      color: #333;
+      font-family: 'Arial', sans-serif; 
+      padding: 2rem; 
+      background: #f0f4f8;
+    }
+    header {
+      background-color: rgba(30, 58, 138, 0.9);
+      padding: 1rem 2rem;
+      color: #fff;
+      font-size: 1.5rem;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    nav a {
+      margin-left: 1.5rem;
+      text-decoration: none;
+      color: #fff;
+      font-weight: 500;
+    }
+    nav a:hover {
+      text-decoration: underline;
+    }
+    .logout-button {
+      background: #fff;
+      color: #1E3A8A;
+      padding: 0.5rem 1rem;
+      border-radius: 0.5rem;
+      text-decoration: none;
+      font-weight: 500;
+      transition: transform .2s, box-shadow .2s;
+    }
+    .logout-button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    }
+    main {
+      flex: 1;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    main h2 {
+      color: rgba(30, 58, 138, 0.8);
+      margin-bottom: 2rem;
+      font-size: 2rem;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+    form {
+      background: rgba(255, 255, 255, 0.95);
+      padding: 2rem;
+      border-radius: 1rem;
+      width: 100%;
+      max-width: 600px;
+      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+    }
+    label, select, input {
+      display: block;
+      width: 100%;
+      margin-bottom: 1rem;
+    }
+    select, input[type="time"], input[type="date"] {
+      padding: 0.5rem;
+      border-radius: 0.5rem;
+      border: 1px solid #ccc;
+    }
+    .btn {
+      display: inline-block;
+      background: #1E3A8A;
+      color: white;
+      padding: 0.75rem 1.25rem;
+      border-radius: 0.5rem;
+      text-align: center;
+      text-decoration: none;
+      font-weight: 600;
+      transition: background 0.2s, transform 0.2s;
+      cursor: pointer;
+      margin-top: 1rem;
+    }
+    .btn:hover {
+      background: #2563EB;
+      transform: translateY(-2px);
+    }
+    .filters {
+      display: none;
+    }
+    .btn-group {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+    }
+    footer {
+      background-color: rgba(30, 58, 138, 0.9);
+      color: #fff;
+      text-align: center;
+      padding: 1rem;
+      font-size: 0.9rem;
+    }
+
+    h1, h2 { color: #1E3A8A; }
+    select, input[type="time"] { padding: 0.4rem; margin: 0.5rem 0; }
+    .chart-box { background: white; border-radius: 10px; padding: 1rem; margin-bottom: 2rem; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+    .classroom-map { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 10px; }
+    .classroom { padding: 10px; text-align: center; border-radius: 5px; color: #fff; font-weight: bold; }
+    .sheltered { background-color: #bbf7d0; color: #065f46; }
+    .not-sheltered { background-color: #fecaca; color: #991b1b; }
+    .legend { margin-top: 10px; }
+    .legend span { display: inline-block; width: 20px; height: 20px; margin-right: 8px; }   
+    form { background: #fff; padding: 1rem; margin-bottom: 2rem; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+    form label, form select, form input { display: block; width: 100%; margin-bottom: 0.5rem; }
+    form button { margin-top: 1rem; background: #1E3A8A; color: white; padding: 0.6rem 1.2rem; border: none; border-radius: 6px; cursor: pointer; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div>Smart Campus Scheduler - Reports & Statistics</div>
+    <nav>
+      <a href="/logout" class="logout-button">Logout</a>
+    </nav>
+  </header>
+
+  <main>
+    <h2>Generate Reports</h2>
+    <form method="POST" action="/generate_report">
+      <label for="reportType">Select Report Type:</label>
+      <select name="report_type" id="reportType" required>
+        <option value="">-- Select Report --</option>
+        <option value="utilization">Classroom Utilization</option>
+        <option value="estimated_students">Estimated Student Numbers</option>
+        <option value="reschedule_needed">Lessons Needing Rescheduling</option>
+        <option value="history">Changes & Rescheduling History</option>
+      </select>
+
+      <div id="buildingFilter" class="filters">
+        <label for="building">Select Building:</label>
+        <select name="building_id" id="building"></select>
+      </div>
+
+      <div id="timeFilter" class="filters">
+        <label for="day">Day of the Week:</label>
+        <select name="day" id="day">
+          <option value="א'">א'</option>
+          <option value="ב'">ב'</option>
+          <option value="ג'">ג'</option>
+          <option value="ד'">ד'</option>
+          <option value="ה'">ה'</option>
+          <option value="ו'">ו'</option>
+        </select>
+
+        <label for="startTime">Start Time:</label>
+        <input type="time" name="start_time" id="startTime"/>
+
+        <label for="endTime">End Time:</label>
+        <input type="time" name="end_time" id="endTime"/>
+      </div>
+
+      <div class="btn-group">
+        <button type="submit" class="btn">Generate Report (Excel)</button>
+      </div>
+    </form>
+  </main>
+
+
+
+
+
+  
+  <!-- Visualizations Section -->
+
+
+  <section class="chart-box">
+    <h2>1. Classroom Shelter Status (By Building)</h2>
+    <label for="buildingSelect">Select Building:</label>
+    <select id="buildingSelect"></select>
+    <div id="classroomMap" class="classroom-map"></div>
+    <div class="legend">
+      <span style="background-color:#bbf7d0"></span> Sheltered
+      <span style="background-color:#fecaca"></span> Not Sheltered
+    </div>
+  </section>
+
+  <section class="chart-box">
+    <h2>2. Estimated Students by Building (Filter by Day & Time)</h2>
+    <label for="daySelect">Day:</label>
+    <select id="daySelect">
+      <option value="א'">א'</option>
+      <option value="ב'">ב'</option>
+      <option value="ג'">ג'</option>
+      <option value="ד'">ד'</option>
+      <option value="ה'">ה'</option>
+      <option value="ו'">ו'</option>
+    </select>
+    <label for="startTime">Start Time:</label>
+    <input type="time" id="startTime" value="08:00">
+    <label for="endTime">End Time:</label>
+    <input type="time" id="endTime" value="22:00">
+    <button onclick="loadEstimatedStudentsChart()">Update Chart</button>
+    <canvas id="studentsChart"></canvas>
+  </section>
+
+  <section class="chart-box">
+    <h2>3. Classroom Peak Usage Hours</h2>
+    <button onclick="loadPeakUsageChart()">Load Chart</button>
+    <canvas id="peakChart"></canvas>
+  </section>
+
+  <footer>
+    &copy; 2025 SmartCampus Scheduler
+  </footer>
+
+  <script>
+    const reportType = document.getElementById('reportType');
+    const buildingFilter = document.getElementById('buildingFilter');
+    const timeFilter = document.getElementById('timeFilter');
+
+    reportType.addEventListener('change', () => {
+      const val = reportType.value;
+      if (val === 'utilization' || val === 'estimated_students' || val === 'time_slot_utilization') {
+        buildingFilter.style.display = 'block';
+        timeFilter.style.display = 'block';
+      } else if (val === 'peak_hours') {
+        buildingFilter.style.display = 'block';
+        timeFilter.style.display = 'none';
+      } else {
+        buildingFilter.style.display = 'none';
+        timeFilter.style.display = 'none';
+      }
+    });
+
+    window.onload = function() {
+      fetch('/api/buildings')
+        .then(response => response.json())
+        .then(buildings => {
+          const buildingSelect = document.getElementById('building');
+          buildingSelect.innerHTML = ''; // Clear old options
+          buildings.forEach(building => {
+            const option = document.createElement('option');
+            option.value = building.building_id;
+            option.textContent = building.building_name;
+            buildingSelect.appendChild(option);
+          });
+        })
+        .catch(error => {
+          console.error('Error fetching buildings:', error);
+        });
+    };
+
+
+
+
+
+    let buildings = [];
+
+    async function fetchBuildings() {
+      const res = await fetch('/api/buildings');
+      buildings = await res.json();
+      const select = document.getElementById('buildingSelect');
+      buildings.forEach(b => {
+        const opt = document.createElement('option');
+        opt.value = b.building_id;
+        opt.textContent = b.building_name;
+        select.appendChild(opt);
+      });
+      loadShelterChart();
+    }
+
+    document.getElementById('buildingSelect').addEventListener('change', loadShelterChart);
+
+    async function loadShelterChart() {
+      const buildingId = document.getElementById('buildingSelect').value;
+      if (!buildingId) return;
+      const res = await fetch(`/api/classroom_shelter_status?building_id=${buildingId}`);
+      const data = await res.json();
+      const container = document.getElementById('classroomMap');
+      container.innerHTML = '';
+      data.forEach(room => {
+        const div = document.createElement('div');
+        div.className = `classroom ${room.Sheltered === 1 ? 'sheltered' : 'not-sheltered'}`;
+        div.textContent = room.Classroom;
+        container.appendChild(div);
+      });
+    }
+
+async function loadEstimatedStudentsChart() {
+  const day = document.getElementById('daySelect').value;
+  let start = document.getElementById('startTime').value;
+  let end = document.getElementById('endTime').value;
+  if (!start) start = '08:00';
+  if (!end) end = '22:00';
+
+  const res = await fetch(`/api/estimated_students_chart?day=${day}&start_time=${start}&end_time=${end}`);
+  const data = await res.json();
+
+  const labels = data.map(row => row.Building);
+  const values = data.map(row => row.EstimatedStudents);
+
+  if (window.studentsChartInstance) window.studentsChartInstance.destroy();
+  const ctx = document.getElementById('studentsChart').getContext('2d');
+  window.studentsChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Estimated Students',
+        data: values,
+        backgroundColor: '#60a5fa'
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true } }
+    }
+  });
+}
+
+
+
+async function loadPeakUsageChart() {
+  const res = await fetch('/api/peak_usage_chart');
+  const data = await res.json();
+  const labels = [...new Set(data.map(row => row.TimeSlot))].sort();
+
+  const weekdays = [...new Set(data.map(row => row.Weekday))];
+
+  const datasets = weekdays.map(day => ({
+    label: day,
+    data: labels.map(ts => {
+      const found = data.find(row => row.TimeSlot === ts && row.Weekday === day);
+      return found ? found.Count : 0;
+    }),
+    fill: false,
+    tension: 0.2,
+    borderWidth: 2,
+    pointRadius: 4,
+    pointHoverRadius: 6,
+  }));
+
+  if (window.peakChartInstance) window.peakChartInstance.destroy();
+  const ctx = document.getElementById('peakChart').getContext('2d');
+  window.peakChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        title: {
+          display: true,
+          text: 'Peak Usage Hours by Time Slot and Weekday'
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              const weekday = context.dataset.label;
+              const timeSlot = context.label;
+              const value = context.parsed.y;
+              return `Day ${weekday}, Time ${timeSlot}: ${value} class(es) scheduled`;
+            }
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: 'Number of Scheduled Classes'
+          }
+        },
+        x: {
+          title: {
+            display: true,
+            text: 'Time Slot'
+          }
+        }
+      }
+    }
+  });
+}
+
+
+    fetchBuildings();
   </script>
 </body>
 </html>
