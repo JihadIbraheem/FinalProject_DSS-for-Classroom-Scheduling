@@ -28,8 +28,6 @@ db = mysql.connector.connect(
 )
 
 
-###########################
-
 def get_connection():
     return mysql.connector.connect(
         host="34.165.87.21",
@@ -176,6 +174,49 @@ def generate_report():
     else:
         return "Invalid report type", 400
 
+from flask import jsonify
+from datetime import timedelta
+
+@app.route('/api/schedule_history')
+def get_schedule_history():
+    try:
+        with db.cursor(dictionary=True) as cursor:
+            cursor.execute("""
+                SELECT sh.*, 
+                       c.course_name,
+                       u.first_name AS username,
+                       cr_old.classroom_num AS old_classroom_num,
+                       b_old.building_name AS old_building,
+                       cr_new.classroom_num AS new_classroom_num,
+                       b_new.building_name AS new_building
+                FROM schedule_history sh
+                JOIN courses c ON sh.course_id = c.course_id
+                JOIN users u ON sh.updated_by_user_id = u.user_id
+                JOIN classrooms cr_old ON sh.old_classroom_id = cr_old.classroom_id
+                JOIN buildings b_old ON cr_old.building_id = b_old.building_id
+                JOIN classrooms cr_new ON sh.new_classroom_id = cr_new.classroom_id
+                JOIN buildings b_new ON cr_new.building_id = b_new.building_id
+                ORDER BY sh.update_timestamp DESC
+            """)
+            history = cursor.fetchall()
+
+            for row in history:
+                if isinstance(row.get("update_timestamp"), (datetime, timedelta)):
+                    row["update_timestamp"] = str(row["update_timestamp"])
+                if isinstance(row.get("old_time_start"), (datetime, timedelta)):
+                    row["old_time_start"] = str(row["old_time_start"])
+                if isinstance(row.get("old_time_end"), (datetime, timedelta)):
+                    row["old_time_end"] = str(row["old_time_end"])
+                if isinstance(row.get("new_time_start"), (datetime, timedelta)):
+                    row["new_time_start"] = str(row["new_time_start"])
+                if isinstance(row.get("new_time_end"), (datetime, timedelta)):
+                    row["new_time_end"] = str(row["new_time_end"])
+
+        return jsonify(history=history)
+
+    except Exception as e:
+        print("Error fetching schedule history:", e)
+        return jsonify(error="Internal server error"), 500
 
 # Visualization API: Sheltered classroom status
 @app.route('/api/classroom_shelter_status')
@@ -1008,7 +1049,6 @@ def update_schedule():
 @app.route('/logout')
 def logout():
     session.clear()
-    flash('Logged out successfully!')
     return redirect(url_for('login'))
 
 @app.route('/api/schedule_details/<int:schedule_id>')

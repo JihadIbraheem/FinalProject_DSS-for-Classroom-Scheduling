@@ -34,6 +34,65 @@ letter-spacing: 1px;
 
 }
 
+.history-card {
+  background: #ffffffee;
+  border-radius: 14px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  border-left: 6px solid #3B82F6;
+  transition: transform 0.3s ease;
+}
+
+.history-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+}
+
+.history-header {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #1E3A8A;
+  margin-bottom: 10px;
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+}
+
+.history-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  color: #555;
+  margin-bottom: 12px;
+}
+
+.history-content {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.history-before, .history-after {
+  flex: 1;
+  border-radius: 10px;
+  padding: 12px;
+  background: #f1f5f9;
+}
+
+.history-before {
+  background: #fee2e2;
+}
+
+.history-after {
+  background: #dcfce7;
+}
+
+.history-before h4,
+.history-after h4 {
+  margin-bottom: 8px;
+  color: #1E3A8A;
+  font-size: 1rem;
+}
+
     .button-glass {
   padding: 10px 16px;
   border: none;
@@ -170,6 +229,27 @@ letter-spacing: 1px;
       cursor:pointer; transition:background .2s;
     }
     .modal ul li:hover { background:#F3F4F6; }
+    .history-wrapper {
+  background: #f8fafc;
+  border: 2px solid #cbd5e1;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+  max-height: 350px;
+  overflow-y: auto;
+}
+
+    #history-cards::-webkit-scrollbar {
+  width: 8px;
+}
+#history-cards::-webkit-scrollbar-thumb {
+  background-color: #ccc;
+  border-radius: 6px;
+}
+#history-cards::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+
 
     .logout-button {
   background: #ffffff;
@@ -184,6 +264,29 @@ letter-spacing: 1px;
   background-color: #e5e7eb; /* אפור בהיר */
   color: #111827; /* כהה יותר */
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.history-wrapper-beautiful {
+  background: linear-gradient(to bottom right, #f0f4ff, #e0f2fe);
+  padding: 30px;
+  border-radius: 18px;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  max-height: 450px;
+  overflow-y: auto;
+  position: relative;
+}
+
+/* סרגל גלילה */
+.history-wrapper-beautiful::-webkit-scrollbar {
+  width: 10px;
+}
+.history-wrapper-beautiful::-webkit-scrollbar-thumb {
+  background-color: #93c5fd;
+  border-radius: 8px;
+}
+.history-wrapper-beautiful::-webkit-scrollbar-track {
+  background: #e2e8f0;
 }
 
 
@@ -225,10 +328,25 @@ letter-spacing: 1px;
   ➕ Add New Schedule
 </button>
 
+<button onclick="toggleHistory()" id="history-toggle" class="button-glass button-green">
+  📜 Show Schedule History
+</button>
+
 <button onclick="toggleShowOnlyIssues()" id="issues-toggle" class="button-glass button-red">
   🔧 Show Incomplete Entries
 </button>
 
+
+</div>
+
+<!-- SCHEDULE HISTORY SECTION -->
+<div id="schedule-history" style="max-width: 1000px; margin: 40px auto; display: none;">
+  <div class="history-wrapper-beautiful">
+    <h2 style="text-align: center; margin-bottom: 1rem; color: #1E3A8A;">Schedule Change History</h2>
+    <div id="history-cards" style="display: flex; flex-direction: column; gap: 20px;">
+      <!-- Cards will be loaded here -->
+    </div>
+  </div>
 </div>
 
 
@@ -378,18 +496,57 @@ letter-spacing: 1px;
     </div>
   </div>
 
+
+
   <footer>&copy; 2025 Classroom Scheduling System</footer>
 
   <script>
     let schedules = [];
 
-    async function loadSchedules() {
-      const res = await fetch('/api/schedules');
-      const json = await res.json();
-      schedules = json.schedules || json;
-      renderCards();
-      filterSchedules();
-    }
+async function loadSchedules() {
+  const res = await fetch('/api/schedules');
+  const json = await res.json();
+  schedules = json.schedules || json;
+  renderCards();
+  filterSchedules();
+}
+
+async function loadScheduleHistory() {
+  const res = await fetch('/api/schedule_history');
+  const data = await res.json();
+  const historyList = data.history || [];
+  const container = document.getElementById('history-cards');
+  container.innerHTML = '';
+
+  historyList.forEach(h => {
+    const card = document.createElement('div');
+    card.className = 'history-card';
+    card.innerHTML = `
+      <div class="history-header">${h.course_name}</div>
+      <div class="history-meta">
+        <span><strong>Updated by:</strong> ${h.username}</span>
+        <span><strong>On:</strong> ${new Date(h.update_timestamp).toLocaleString()}</span>
+      </div>
+      <div class="history-content">
+        <div class="history-before">
+          <h4>Before</h4>
+          <p><strong>Day:</strong> ${h.old_weekday}</p>
+          <p><strong>Time:</strong> ${h.old_time_start} - ${h.old_time_end}</p>
+          <p><strong>Room:</strong> ${h.old_classroom_num} (${h.old_building})</p>
+        </div>
+        <div class="history-after">
+          <h4>After</h4>
+          <p><strong>Day:</strong> ${h.new_weekday}</p>
+          <p><strong>Time:</strong> ${h.new_time_start} - ${h.new_time_end}</p>
+          <p><strong>Room:</strong> ${h.new_classroom_num} (${h.new_building})</p>
+        </div>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+
 
 function renderCards() {
   const container = document.getElementById('schedule-cards-container');
@@ -493,6 +650,20 @@ card.innerHTML = `
   });
 }
 
+
+function toggleHistory() {
+  const historySection = document.getElementById('schedule-history');
+  const toggleBtn = document.getElementById('history-toggle');
+
+  if (historySection.style.display === 'none') {
+    historySection.style.display = 'block';
+    toggleBtn.textContent = '❌ Hide Schedule History';
+    loadScheduleHistory();  
+  } else {
+    historySection.style.display = 'none';
+    toggleBtn.textContent = '📜 Show Schedule History';
+  }
+}
 
 
 function editCourse(course_id, name, lecturer, students) {
