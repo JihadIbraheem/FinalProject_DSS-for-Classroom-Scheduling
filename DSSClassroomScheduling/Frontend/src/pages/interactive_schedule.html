@@ -343,6 +343,13 @@ letter-spacing: 1px;
 <div id="schedule-history" style="max-width: 1000px; margin: 40px auto; display: none;">
   <div class="history-wrapper-beautiful">
     <h2 style="text-align: center; margin-bottom: 1rem; color: #1E3A8A;">Schedule Change History</h2>
+    <div style="text-align: center; margin-bottom: 1rem;">
+      <input type="text" id="history-search-input" placeholder="🔍 Search Course Name..." 
+         style="padding: 10px 14px; border-radius: 12px; border: 1px solid #ccc; width: 300px;
+         box-shadow: 0 2px 6px rgba(0,0,0,0.1); font-size: 1rem; transition: 0.3s;" 
+         oninput="filterHistoryCards()" />
+      </div>
+
     <div id="history-cards" style="display: flex; flex-direction: column; gap: 20px;">
       <!-- Cards will be loaded here -->
     </div>
@@ -546,6 +553,15 @@ async function loadScheduleHistory() {
   });
 }
 
+function filterHistoryCards() {
+  const searchValue = document.getElementById('history-search-input').value.toLowerCase();
+  const cards = document.querySelectorAll('#history-cards .history-card');
+
+  cards.forEach(card => {
+    const courseName = card.querySelector('.history-header')?.textContent.toLowerCase() || '';
+    card.style.display = courseName.includes(searchValue) ? '' : 'none';
+  });
+}
 
 
 function renderCards() {
@@ -609,12 +625,14 @@ card.innerHTML = `
       Edit Schedule
     </button>
 
-      <button onclick='editCourse(
+<button onclick='editCourse(
   ${JSON.stringify(r.course_id || "")}, 
   ${JSON.stringify(r.course_name || "")}, 
   ${JSON.stringify(r.lecturer_name || "")}, 
-  ${r.students_num != null ? r.students_num : 0}
+  ${Number.isInteger(r.students_num) ? r.students_num : 0}
 )'
+
+
  style="
       background-color: #10B981;
       color: white;

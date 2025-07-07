@@ -1117,13 +1117,24 @@ def save_schedule_update():
     data = request.get_json()
     if 'schedule_id' not in data:
         return jsonify(success=False, message="Missing schedule_id in request"), 400
+
     schedule_id = data['schedule_id']
     weekday = data['weekday']
     time_start = data['time_start']
     time_end = data['time_end']
     capacity = int(data['capacity'])
-    is_remote = data['is_remote_learning'].strip().lower()
-    is_sheltered = data['is_sheltered'].strip().lower()
+
+    def convert_to_bool(value):
+        value = value.strip().lower() if value else ""
+        if value == 'yes':
+            return 1
+        if value == 'no':
+            return 0
+        return None
+
+    is_remote = convert_to_bool(data.get('is_remote_learning'))
+    is_sheltered = convert_to_bool(data.get('is_sheltered'))
+
     board_count = int(data.get('board_count', 0))
     selected_classroom_num = data.get('selected_classroom_num')
 
@@ -1167,18 +1178,17 @@ def save_schedule_update():
 
         exclude_current_classroom = not time_changed
 
-        # Build the query dynamically
         query = """
             SELECT * FROM classrooms c
             WHERE capacity >= %s
         """
         params = [capacity]
 
-        if is_remote not in ["", "doesn't matter"]:
+        if is_remote is not None:
             query += " AND is_remote_learning = %s"
             params.append(is_remote)
 
-        if is_sheltered not in ["", "doesn't matter"]:
+        if is_sheltered is not None:
             query += " AND is_sheltered = %s"
             params.append(is_sheltered)
 
@@ -1236,7 +1246,6 @@ def save_schedule_update():
 
         new_classroom_id = classroom_row['classroom_id']
 
-        # Save history
         cursor.execute("""
             INSERT INTO schedule_history (
                 schedule_id, course_id,
@@ -1256,14 +1265,12 @@ def save_schedule_update():
             session.get('user_id')
         ))
 
-        # Update schedule
         cursor.execute("""
             UPDATE schedules
             SET classroom_id=%s, weekday=%s, time_start=%s, time_end=%s
             WHERE schedule_id = %s
         """, (new_classroom_id, weekday, time_start, time_end, schedule_id))
 
-        # Update classroom properties
         cursor.execute("""
             UPDATE classrooms
             SET capacity=%s, is_remote_learning=%s, is_sheltered=%s
@@ -1277,6 +1284,7 @@ def save_schedule_update():
         db.commit()
 
     return jsonify(success=True)
+
 
 @app.route('/reports_statistics')
 def reports_schedule():

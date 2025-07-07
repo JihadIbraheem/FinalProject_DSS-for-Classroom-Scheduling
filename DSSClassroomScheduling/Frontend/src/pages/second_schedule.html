@@ -801,6 +801,18 @@ async function submitEditModal() {
     selected_classroom_num
   };
 
+  // ✅ שמירת נתוני העריכה לשימוש בהמשך (גם במודל הרגיל)
+  window.pendingEditData = {
+    schedule_id,
+    weekday,
+    time_start,
+    time_end,
+    capacity,
+    is_remote_learning,
+    is_sheltered,
+    board_count
+  };
+
   const res = await fetch('/api/save_schedule_update', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -825,16 +837,6 @@ async function submitEditModal() {
   }
 
   if (result.message === "No available classrooms found") {
-    window.pendingEditData = {
-      schedule_id,
-      weekday,
-      time_start,
-      time_end,
-      capacity,
-      is_remote_learning,
-      is_sheltered,
-      board_count
-    };
     document.getElementById('noClassroomModalBackdrop').style.display = 'flex';
     return;
   }
@@ -1071,14 +1073,15 @@ async function editRow(schedule_id) {
   const res = await fetch(`/api/schedule_details/${schedule_id}`);
   const data = await res.json();
 
-  // תיקון קריטי: ודא שהשדה הזה קיים במודל!
+  // קריטי: קישור schedule_id לשדה חבוי במודל
   document.getElementById('modal-schedule-id').value = schedule_id;
 
-  document.getElementById('modal-current-classroom').value = (data.classroom_num || '').split('-').pop();  
+  // עדכון שדות כיתה
+  document.getElementById('modal-current-classroom').value = (data.classroom_num || '').split('-').pop();
   document.getElementById('modal-building-name').value = data.building_name || '';
-  document.getElementById('modal-classroom').value = data.classroom_num || '';  
+  document.getElementById('modal-classroom').value = data.classroom_num || '';
 
-  // יצירת תמונות מתוך הנתונים
+  // הוספת תמונות של הכיתה (אם קיימות)
   const imgContainer = document.createElement('div');
   imgContainer.style.display = 'flex';
   imgContainer.style.flexWrap = 'wrap';
@@ -1096,10 +1099,13 @@ async function editRow(schedule_id) {
     imgContainer.appendChild(img);
   });
 
+  // מנקה קודמים אם קיימים
   const modal = document.querySelector('#editModalBackdrop .modal');
+  const oldImgs = modal.querySelectorAll('img');
+  oldImgs.forEach(img => img.remove());
   modal.appendChild(imgContainer);
 
-  // שדות נוספים
+  // עדכון שדות נוספים
   document.getElementById('modal-course-name').value = data.course_name || '';
   document.getElementById('modal-lecturer').value = data.lecturer_name || '';
   document.getElementById('modal-weekday').value = data.weekday || '';
@@ -1110,9 +1116,10 @@ async function editRow(schedule_id) {
   document.getElementById('modal-sheltered').value = data.is_sheltered || '';
   document.getElementById('modal-board-count').value = data.boards.length || 0;
 
+  // הצגת המודל
   document.getElementById('editModalBackdrop').style.display = 'flex';
 
-  // שמירת ערכים מקוריים להשוואה
+  // שמירה להשוואת שינויים בהמשך
   window.originalSchedule = {
     weekday: data.weekday || '',
     time_start: data.time_start || '',
@@ -1123,6 +1130,7 @@ async function editRow(schedule_id) {
     board_count: data.boards.length || 0
   };
 }
+
 
 
 function updateCategoryColor(category, color) {
