@@ -36,16 +36,7 @@ def get_connection():
         database="classroom_scheduler"
     )
 
-# API to fetch buildings list for frontend dropdown
-@app.route('/api/buildings', methods=['GET'])
-def fetch_buildings_for_dropdown():
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT building_id, building_name FROM buildings")
-    buildings = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    return jsonify(buildings)
+
 
 # Reports route to render the frontend
 @app.route('/reports_statistics', methods=['GET'])
