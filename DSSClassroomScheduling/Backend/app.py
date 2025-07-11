@@ -12,6 +12,11 @@ from datetime import datetime
 import re
 from datetime import date,  timedelta
 import re 
+import json
+from flask import session
+
+
+
 
 app = Flask(__name__)
 
@@ -414,6 +419,16 @@ def manual_schedule():
     return render_template('upload.html', data_exists=True, upload_status='success')
 
 
+def split_multiple_courses(cell_text):
+    parts = cell_text.split('}')
+    courses = []
+    for i in range(len(parts)):
+        if i == 0:
+            courses.append(parts[i] + '}')  # הראשון כולל הסוגר
+        elif i < len(parts) and parts[i].strip():
+            courses.append(parts[i].strip() + '}')
+    return courses
+
 def is_data_existing():
     with db.cursor(buffered=True) as cursor:  
         cursor.execute("SELECT COUNT(*) FROM schedules")
@@ -453,84 +468,105 @@ def max_capacity():
         cursor.execute("SELECT MAX(capacity) FROM classrooms")
         result = cursor.fetchone()
         return jsonify(max_capacity=result[0] if result else 100)
+    
+@app.route('/resolve_conflicts', methods=['GET', 'POST'])
+def resolve_conflicts():
+    conflicts = session.get('pending_conflicts', [])
 
-def process_file(file, return_raw_df=False):
-    df = pd.read_excel(file)
-    df.columns = df.columns.map(lambda x: str(x).strip())
+    if not conflicts:
+        flash('No pending conflicts to resolve.')
+        return redirect(url_for('upload'))
 
-    required_columns = {'יום', 'חדר', 'בניין', 'קיבולת'}
-    if not required_columns.issubset(set(df.columns)):
-        raise ValueError(f"Missing required columns. Found columns: {list(df.columns)}. Required: {list(required_columns)}")
+    if request.method == 'POST':
+        selected_classroom_id = request.form.get('selected_classroom')
+        course_data = json.loads(request.form.get('course_data'))
+        weekday = request.form.get('weekday')
+        start_time = request.form.get('start_time')
+        end_time = request.form.get('end_time')
 
-    for col in ['יום', 'חדר', 'בניין']:
-        if df[col].isnull().any() or (df[col].astype(str).str.strip() == "").any():
-            raise ValueError(f"Empty values found in required column: '{col}'")
+        if not selected_classroom_id or not selected_classroom_id.strip().isdigit():
+            flash("נבחר ערך לא תקין לכיתה. אנא בחר/י כיתה תקינה.")
+            return redirect(url_for('resolve_conflicts'))
 
-    hourly_columns = [
-        "08:00 - 09:00", "09:00 - 10:00", "10:00 - 11:00", "11:00 - 12:00",
-        "12:00 - 13:00", "13:00 - 14:00", "14:00 - 15:00", "15:00 - 16:00",
-        "16:00 - 17:00", "17:00 - 18:00", "18:00 - 19:00", "19:00 - 20:00",
-        "20:00 - 21:00", "21:00 - 22:00"
-    ]
-    missing_slots = [col for col in hourly_columns if col not in df.columns]
-    if missing_slots:
-        raise ValueError(f"Missing time slot columns: {missing_slots}")
+        selected_classroom_id = int(selected_classroom_id)
 
-    time_slots = [col for col in df.columns if col not in required_columns]
-    schedule_rows = []
-    course_rows = []
+        # 🟢 הכנס קודם לקורסים (אם לא קיים)
+        with db.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM courses WHERE course_id = %s", (course_data['course_id'],))
+            exists = cursor.fetchone()[0]
+            if not exists:
+                cursor.execute("""
+                    INSERT INTO courses (course_id, course_name, students_num)
+                    VALUES (%s, %s, %s)
+                """, (
+                    course_data['course_id'],
+                    course_data['course_name'],
+                    course_data['students_num']
+                ))
+                db.commit()
 
-    for i, row in df.iterrows():
-        weekday = row['יום']
-        classroom_id = str(row['חדר']).strip()
+        # ✅ רק עכשיו הכנס לשיבוצים
+        with db.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO schedules (classroom_id, course_id, weekday, time_start, time_end)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (
+                selected_classroom_id,
+                course_data['course_id'],
+                weekday,
+                start_time,
+                end_time
+            ))
+            db.commit()
 
-        for slot in time_slots:
-            course_info = row[slot]
-            if pd.notna(course_info):
-                course_info = str(course_info).strip()
-                if course_info == '' or course_info == slot:
-                    continue
+        # הסרת הקונפליקט מהתור
+        session['pending_conflicts'] = conflicts[1:]
+        session.modified = True
 
-                # Conflict
-                if course_info.count('}') >= 2:
-                    raise ValueError(f"Conflict detected: multiple courses in one cell at row {i+2}, column '{slot}': '{course_info}'")
+        if session['pending_conflicts']:
+            return redirect(url_for('resolve_conflicts'))
+        else:
+            flash("All conflicts resolved successfully.")
+            return redirect(url_for('upload'))
 
-                try:
-                    start_time, end_time = slot.split('-')
-                except ValueError:
-                    continue
+    # GET – הצגת הקונפליקט הנוכחי
+    current_conflict = conflicts[0]
+    course_data = current_conflict['course_data']
+    suggested_classroom = current_conflict.get('suggested_classroom')
+    weekday = current_conflict['weekday']
+    start_time = current_conflict['start_time']
+    end_time = current_conflict['end_time']
 
-                course_data = extract_course_details(course_info)
-                if not course_data:
-                    raise ValueError(f"Invalid course format at row {i+2}, column '{slot}': '{course_info}'")
+    return render_template('resolve_conflict.html',
+                           conflict=current_conflict,
+                           course_data=course_data,
+                           suggested_classroom=suggested_classroom,
+                           weekday=weekday,
+                           start_time=start_time,
+                           end_time=end_time)
 
-                required_fields = ['course_id', 'students_num', 'course_name']
-                for field in required_fields:
-                    if field not in course_data or str(course_data[field]).strip() == '':
-                        raise ValueError(f"Missing required field '{field}' at row {i+2}, column '{slot}': '{course_info}'")
+def find_available_classrooms(request_data):
+    weekday = request_data['weekday']
+    start_time = request_data['start_time']
+    end_time = request_data['end_time']
+    students_num = request_data['students_num']
 
-                schedule_rows.append({
-                    'classroom_id': classroom_id,
-                    'course_id': course_data['course_id'],
-                    'weekday': weekday,
-                    'status': 'Confirmed',
-                    'time_start': start_time + ':00',
-                    'time_end': end_time + ':00'
-                })
-
-                course_rows.append(course_data)
-
-    schedule_df = pd.DataFrame(schedule_rows)
-    courses_df = pd.DataFrame(course_rows).drop_duplicates(subset='course_id')
-    courses_df["students_num"] = courses_df["students_num"].astype(int)
-
-    schedule_df = merge_continuous_schedules(schedule_df)
-
-    if return_raw_df:
-        return schedule_df, courses_df, df
-
-    return schedule_df, courses_df
-
+    with db.cursor(dictionary=True) as cursor:
+        cursor.execute("""
+            SELECT c.classroom_id, c.classroom_num, c.capacity, b.building_name
+            FROM classrooms c
+            JOIN buildings b ON c.building_id = b.building_id
+            WHERE c.capacity >= %s AND c.classroom_id NOT IN (
+                SELECT classroom_id FROM schedules
+                WHERE weekday = %s AND (
+                    (time_start < %s AND time_end > %s) OR
+                    (time_start < %s AND time_end > %s) OR
+                    (time_start >= %s AND time_end <= %s)
+                )
+            )
+            ORDER BY c.capacity ASC
+        """, (students_num, weekday, end_time, end_time, start_time, start_time, start_time, end_time))
+        return cursor.fetchall()
 
 def merge_continuous_schedules(df):
     df['time_start'] = df['time_start'].astype(str).apply(lambda x: re.sub(r'[^\d:]', '', x))
@@ -655,6 +691,126 @@ def insert_courses_to_db(courses_df):
 def uploaded_file(filename):
     return send_from_directory('uploads', filename)
 
+def process_file(file, return_raw_df=False):
+    import pandas as pd
+
+    df = pd.read_excel(file)
+    df.columns = df.columns.map(lambda x: str(x).strip())
+
+    required_columns = {'יום', 'חדר', 'בניין', 'קיבולת'}
+    if not required_columns.issubset(set(df.columns)):
+        raise ValueError(f"Missing required columns. Found columns: {list(df.columns)}. Required: {list(required_columns)}")
+
+    for col in ['יום', 'חדר', 'בניין']:
+        if df[col].isnull().any() or (df[col].astype(str).str.strip() == "").any():
+            raise ValueError(f"Empty values found in required column: '{col}'")
+
+    hourly_columns = [
+        "08:00 - 09:00", "09:00 - 10:00", "10:00 - 11:00", "11:00 - 12:00",
+        "12:00 - 13:00", "13:00 - 14:00", "14:00 - 15:00", "15:00 - 16:00",
+        "16:00 - 17:00", "17:00 - 18:00", "18:00 - 19:00", "19:00 - 20:00",
+        "20:00 - 21:00", "21:00 - 22:00"
+    ]
+    missing_slots = [col for col in hourly_columns if col not in df.columns]
+    if missing_slots:
+        raise ValueError(f"Missing time slot columns: {missing_slots}")
+
+    time_slots = [col for col in df.columns if col not in required_columns]
+    schedule_rows = []
+    course_rows = []
+    pending_conflicts = []
+
+    for i, row in df.iterrows():
+        weekday = row['יום']
+        classroom_id = str(row['חדר']).strip()
+
+        for slot in time_slots:
+            cell_text = row[slot]
+            if pd.notna(cell_text):
+                cell_text = str(cell_text).strip()
+                if cell_text == '' or cell_text == slot:
+                    continue
+
+                try:
+                    start_time, end_time = slot.split('-')
+                    start_time = start_time.strip()
+                    end_time = end_time.strip()
+                except ValueError:
+                    continue
+
+                if cell_text.count('}') >= 2:
+                    all_parts = split_multiple_courses(cell_text)
+
+                    for idx, part in enumerate(all_parts):
+                        course_data = extract_course_details(part)
+                        if not course_data:
+                            continue
+
+                        required_fields = ['course_id', 'students_num', 'course_name']
+                        if any(field not in course_data or str(course_data[field]).strip() == '' for field in required_fields):
+                            raise ValueError(f"Missing required field in part {idx+1} at row {i+2}, column '{slot}': '{part}'")
+
+                        if idx == 0:
+                            schedule_rows.append({
+                                'classroom_id': classroom_id,
+                                'course_id': course_data['course_id'],
+                                'weekday': weekday,
+                                'status': 'Confirmed',
+                                'time_start': start_time + ':00',
+                                'time_end': end_time + ':00'
+                            })
+                            course_rows.append(course_data)
+                        else:
+                            available = find_available_classrooms({
+                                'weekday': weekday,
+                                'start_time': start_time + ':00',
+                                'end_time': end_time + ':00',
+                                'students_num': course_data['students_num']
+                            })
+
+                            pending_conflicts.append({
+                                'original_classroom_id': classroom_id,
+                                'weekday': weekday,
+                                'start_time': start_time + ':00',
+                                'end_time': end_time + ':00',
+                                'course_data': course_data,
+                                'suggested_classroom': available[0] if available else None
+                            })
+
+                    continue  # כל החלק טופל
+
+                # רק שיעור אחד
+                course_data = extract_course_details(cell_text)
+                if not course_data:
+                    raise ValueError(f"Invalid course format at row {i+2}, column '{slot}': '{cell_text}'")
+
+                required_fields = ['course_id', 'students_num', 'course_name']
+                for field in required_fields:
+                    if field not in course_data or str(course_data[field]).strip() == '':
+                        raise ValueError(f"Missing required field '{field}' at row {i+2}, column '{slot}': '{cell_text}'")
+
+                schedule_rows.append({
+                    'classroom_id': classroom_id,
+                    'course_id': course_data['course_id'],
+                    'weekday': weekday,
+                    'status': 'Confirmed',
+                    'time_start': start_time + ':00',
+                    'time_end': end_time + ':00'
+                })
+
+                course_rows.append(course_data)
+
+    schedule_df = pd.DataFrame(schedule_rows)
+    courses_df = pd.DataFrame(course_rows).drop_duplicates(subset='course_id')
+    courses_df["students_num"] = courses_df["students_num"].astype(int)
+
+    schedule_df = merge_continuous_schedules(schedule_df)
+
+    if return_raw_df:
+        return schedule_df, courses_df, df
+
+    return schedule_df, courses_df, pending_conflicts
+
 @app.route('/upload', methods=['GET', 'POST'])
 def upload():
     upload_status = None  
@@ -669,9 +825,17 @@ def upload():
             return redirect(url_for('upload'))
 
         try:
-            schedule_data, course_data = process_file(file)
+            # ✅ קבלת קונפליקטים מהפונקציה
+            schedule_data, course_data, conflicts = process_file(file)
+
             insert_courses_to_db(course_data)
             insert_data_to_db(schedule_data)
+
+            # ✅ אם יש קונפליקטים, שלח את המשתמש לדף הפתרון
+            if conflicts:
+                session['pending_conflicts'] = conflicts
+                session.modified = True
+                return redirect(url_for('resolve_conflicts'))
 
             upload_status = 'success'
             flash('File uploaded and data inserted successfully!')
