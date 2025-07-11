@@ -454,21 +454,18 @@ def max_capacity():
         result = cursor.fetchone()
         return jsonify(max_capacity=result[0] if result else 100)
 
-def process_file(file):
+def process_file(file, return_raw_df=False):
     df = pd.read_excel(file)
     df.columns = df.columns.map(lambda x: str(x).strip())
 
-    # ✅ בדיקה 1: עמודות חובה
     required_columns = {'יום', 'חדר', 'בניין', 'קיבולת'}
     if not required_columns.issubset(set(df.columns)):
         raise ValueError(f"Missing required columns. Found columns: {list(df.columns)}. Required: {list(required_columns)}")
 
-    # ✅ בדיקה 2: תאים ריקים בעמודות חיוניות
     for col in ['יום', 'חדר', 'בניין']:
         if df[col].isnull().any() or (df[col].astype(str).str.strip() == "").any():
             raise ValueError(f"Empty values found in required column: '{col}'")
 
-    # ✅ בדיקה 3: עמודות שעות נדרשות
     hourly_columns = [
         "08:00 - 09:00", "09:00 - 10:00", "10:00 - 11:00", "11:00 - 12:00",
         "12:00 - 13:00", "13:00 - 14:00", "14:00 - 15:00", "15:00 - 16:00",
@@ -492,19 +489,21 @@ def process_file(file):
             if pd.notna(course_info):
                 course_info = str(course_info).strip()
                 if course_info == '' or course_info == slot:
-                    continue  # דלג על שורה ריקה או תא שמכיל את שם העמודה
+                    continue
+
+                # Conflict
+                if course_info.count('}') >= 2:
+                    raise ValueError(f"Conflict detected: multiple courses in one cell at row {i+2}, column '{slot}': '{course_info}'")
 
                 try:
                     start_time, end_time = slot.split('-')
                 except ValueError:
                     continue
 
-                # ✅ בדיקה 4: פורמט תקין של תא
                 course_data = extract_course_details(course_info)
                 if not course_data:
                     raise ValueError(f"Invalid course format at row {i+2}, column '{slot}': '{course_info}'")
 
-                # ✅ בדיקה 5: שדות חובה בקורס
                 required_fields = ['course_id', 'students_num', 'course_name']
                 for field in required_fields:
                     if field not in course_data or str(course_data[field]).strip() == '':
@@ -527,8 +526,10 @@ def process_file(file):
 
     schedule_df = merge_continuous_schedules(schedule_df)
 
-    return schedule_df, courses_df
+    if return_raw_df:
+        return schedule_df, courses_df, df
 
+    return schedule_df, courses_df
 
 
 def merge_continuous_schedules(df):
