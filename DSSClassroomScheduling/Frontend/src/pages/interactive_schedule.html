@@ -602,8 +602,16 @@ card.innerHTML = `
     ${r.course_name}
      ${hasIssue ? `<span title="${issueTooltip}" style="color: #DC2626; cursor: help;">🔧</span>` : ''}
   </div>
+<p style="font-weight: bold; color: #1e3a8a; font-size: 0.95rem;">
+  <strong>Course ID:</strong> 
+  <span dir="ltr" style="display: inline-block;">
+    ${r.course_id.replace(/(\d)([א-ת])/, '$1 $2')}
+  </span>
+</p>
 
-  <p><strong>Classroom:</strong> ${r.classroom_num}</p>
+
+<p><strong>Classroom:</strong> ${r.classroom_num?.split('-').pop()}</p>
+
   <p><strong>Building:</strong> ${r.building_name}</p>
   <p><strong>Lecturer:</strong> ${r.lecturer_name || '—'}</p>
   <p><strong>Students:</strong> ${r.students_num || '—'}</p>

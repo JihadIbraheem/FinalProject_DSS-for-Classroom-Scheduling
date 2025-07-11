@@ -117,9 +117,20 @@ letter-spacing: 1px; }
   </button>
 
 
-  <select id="building-filter" onchange="filterByBuilding()" style="min-width: 200px;">
-    <option value="all">All Buildings</option>
-  </select>
+  <select id="building-filter" onchange="filterByBuilding()" style="
+  background: white;
+  border: 1px solid #ccc;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-weight: bold;
+  font-size: 14px;
+  min-width: 200px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  transition: box-shadow 0.2s ease-in-out;
+" onmouseover="this.style.boxShadow='0 4px 8px rgba(0,0,0,0.1)'" onmouseout="this.style.boxShadow='0 2px 4px rgba(0,0,0,0.05)'">
+  <option value="all">All Buildings</option>
+</select>
+
   <button onclick="toggleOnlyProblematicClassrooms()" id="classroom-issues-toggle" style="
     background: linear-gradient(135deg, #EF4444, #c16727);
   color: white;

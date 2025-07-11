@@ -438,25 +438,64 @@ letter-spacing: 1px;
   </div>
 </div>
 
- <!-- CLASSROOM SELECTION MODAL -->
 <!-- CLASSROOM SELECTION MODAL -->
-<div id="classroomModalBackdrop" class="modal-backdrop" onclick="closeClassroomModal()">
-  <div class="modal" onclick="event.stopPropagation()">
-    <!-- הוספת כפתור סגירה -->
+<div id="classroomModalBackdrop" class="modal-backdrop" onclick="closeClassroomModal()" style="
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: rgba(0, 0, 0, 0.4);
+  display: none; /* מוסתר כברירת מחדל */
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+">
+  <div class="modal" onclick="event.stopPropagation()" style="
+    background-color: white;
+    max-width: 550px;
+    width: 95%;
+    height: 500px; /* גובה מוגדל */
+    padding: 28px 32px;
+    position: relative;
+    border-radius: 14px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    overflow-y: auto;
+    font-family: 'Segoe UI', sans-serif;
+  ">
+    <!-- Close button -->
     <span onclick="closeClassroomModal()" style="
       position: absolute;
-      top: 10px;
-      right: 12px;
-      font-size: 29px;
-      color: #f50b0b;
+      top: 12px;
+      right: 16px;
+      font-size: 28px;
+      color: #ef4444;
       cursor: pointer;
       font-weight: bold;
     " title="Close">×</span>
 
-    <h3>Select New Classroom</h3>
-    <ul id="classroom-options-list"></ul>
+    <!-- Modal Title -->
+    <h3 style="
+      margin-bottom: 20px;
+      font-size: 1.3rem;
+      font-weight: 600;
+      color: #1f2937;
+      display: flex;
+      align-items: center;
+    ">
+      Select New Classroom
+    </h3>
+
+    <!-- Classroom options list -->
+    <ul id="classroom-options-list" style="
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      max-height: 380px;
+      overflow-y: auto;
+    ">
+      <!-- JS inserts options here -->
+    </ul>
   </div>
 </div>
+
 
 <div id="zoomContainer" class="zoom-preview">
   <img id="zoomImage" src="" alt="Zoomed">
@@ -464,30 +503,48 @@ letter-spacing: 1px;
 
 <!-- NO-CLASSROOMS MODAL -->
 <div id="noClassroomModalBackdrop" class="modal-backdrop" onclick="closeNoClassroomModal()">
-  <div class="modal" onclick="event.stopPropagation()">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width: 500px; padding: 24px; position: relative;">
+    
+    <!-- Close button -->
     <span onclick="closeNoClassroomModal()" style="
-      position:absolute; top:10px; right:12px;
-      font-size:29px; color:#f50b0b; font-weight:bold; cursor:pointer;">×</span>
+      position: absolute; top: 10px; right: 12px;
+      font-size: 28px; color: #f43f5e; font-weight: bold; cursor: pointer;">×</span>
 
-    <h3 style="margin-bottom:12px;">No available classrooms found</h3>
-    <p style="margin-bottom:18px;">
-      Would you like to search again without the <b>Remote Learning</b> &
-      <b>Sheltered</b> constraints?
+    <!-- Title with icon -->
+    <h3 style="margin-bottom: 12px; color: #b91c1c; font-size: 1.25rem; display: flex; align-items: center;">
+      <span style="font-size: 1.5rem; margin-right: 8px;">❌</span>
+      No available classrooms found
+    </h3>
+
+    <!-- Explanation -->
+    <p style="margin-bottom: 24px; line-height: 1.5;">
+      We couldn’t find any available classrooms that meet your selected constraints.<br>
+      You can try searching again by relaxing certain requirements such as 
+      <b>Remote Learning</b> and <b>Sheltered</b>, or try an alternative time.
     </p>
 
-    <button class="check-available" onclick="searchIgnoringRemoteSheltered()" style="
-      background:linear-gradient(135deg,#3B82F6,#1D4ED8);
-      color:#fff; font-weight:600; padding:10px 16px;
-      border:none; border-radius:6px; cursor:pointer;">
-      Search with relaxed constraints
-    </button>
-    <button class="check-available" onclick="searchAlternativeTimes()"
-        style="margin-top: 10px; background: linear-gradient(135deg,#10B981,#059669);">
-        Search on different time/day
-    </button>
+    <!-- Buttons container with spacing -->
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <!-- Relaxed constraint search -->
+      <button class="check-available" onclick="searchIgnoringRemoteSheltered()" style="
+        background: linear-gradient(135deg, #3B82F6, #1D4ED8);
+        color: #fff; font-weight: 600; padding: 10px 16px;
+        border: none; border-radius: 6px; cursor: pointer; width: 100%;">
+        🔍 Search with relaxed constraints
+      </button>
+
+      <!-- Search alternative time -->
+      <button class="check-available" onclick="searchAlternativeTimes()" style="
+        background: linear-gradient(135deg, #10B981, #059669);
+        color: #fff; font-weight: 600; padding: 10px 16px;
+        border: none; border-radius: 6px; cursor: pointer; width: 100%;">
+        🕒 Search on different time/day
+      </button>
+    </div>
 
   </div>
 </div>
+
 
   <script>
     let currentDayIndex = 0;
