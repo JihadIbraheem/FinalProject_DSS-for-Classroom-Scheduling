@@ -1,3 +1,4 @@
+<!--Version with design like other pages-->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -176,7 +177,7 @@
   </div>
 
   <div class="stats-card">
-    <h2>Statistics</h2>
+    <h2>Analitical Visualizations</h2>
     <section class="chart-box">
       <h3>1. Classroom Shelter Status (By Building)</h3>
       <label for="buildingSelect">Select Building:</label>
@@ -207,11 +208,20 @@
       <canvas id="studentsChart"></canvas>
     </section>
 
-    <section class="chart-box">
-      <h3>3. Classroom Peak Usage Hours</h3>
-      <button onclick="loadPeakUsageChart()" class="btn" style="margin-bottom: 1rem;">Load Chart</button>
-      <canvas id="peakChart"></canvas>
-    </section>
+<section class="chart-box">
+  <h2>3. Peak Usage by Hour (Filtered by Weekday)</h2>
+  <label for="weekdaySelect">Select Day:</label>
+  <select id="weekdaySelect">
+    <option value="א'">א'</option>
+    <option value="ב'">ב'</option>
+    <option value="ג'">ג'</option>
+    <option value="ד'">ד'</option>
+    <option value="ה'">ה'</option>
+    <option value="ו'">ו'</option>
+  </select>
+  <button onclick="loadFilteredPeakChart()">Show Peak Hours</button>
+  <canvas id="filteredPeakChart" height="150"></canvas>
+</section>
   </div>
 </main>
 
@@ -219,7 +229,6 @@
   &copy; 2025 Classroom Scheduling System
 </footer>
 
-<!-- script section remains unchanged -->
 
 
   <script>
@@ -289,7 +298,7 @@
       container.innerHTML = '';
       data.forEach(room => {
         const div = document.createElement('div');
-        div.className = `classroom ${room.Sheltered === 1 ? 'sheltered' : 'not-sheltered'}`;
+        div.className = `classroom ${room.Sheltered === "1" ? 'sheltered' : 'not-sheltered'}`;
         div.textContent = room.Classroom;
         container.appendChild(div);
       });
@@ -330,70 +339,57 @@ async function loadEstimatedStudentsChart() {
 
 
 
-async function loadPeakUsageChart() {
-  const res = await fetch('/api/peak_usage_chart');
-  const data = await res.json();
-  const labels = [...new Set(data.map(row => row.TimeSlot))].sort();
+  async function loadFilteredPeakChart() {
+    const day = document.getElementById('weekdaySelect').value;
+    const res = await fetch(`/api/peak_usage_filtered?weekday=${day}`);
+    const data = await res.json();
 
-  const weekdays = [...new Set(data.map(row => row.Weekday))];
+    const labels = data.map(row => row.Hour + ":00");
+    const values = data.map(row => row.Count);
 
-  const datasets = weekdays.map(day => ({
-    label: day,
-    data: labels.map(ts => {
-      const found = data.find(row => row.TimeSlot === ts && row.Weekday === day);
-      return found ? found.Count : 0;
-    }),
-    fill: false,
-    tension: 0.2,
-    borderWidth: 2,
-    pointRadius: 4,
-    pointHoverRadius: 6,
-  }));
-
-  if (window.peakChartInstance) window.peakChartInstance.destroy();
-  const ctx = document.getElementById('peakChart').getContext('2d');
-  window.peakChartInstance = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels,
-      datasets
-    },
-    options: {
-      responsive: true,
-      plugins: {
-        title: {
-          display: true,
-          text: 'Peak Usage Hours by Time Slot and Weekday'
+    if (window.filteredPeakChartInstance) window.filteredPeakChartInstance.destroy();
+    const ctx = document.getElementById('filteredPeakChart').getContext('2d');
+    window.filteredPeakChartInstance = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Number of Classes',
+          data: values,
+          backgroundColor: '#60a5fa'
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          title: {
+            display: true,
+            text: `Scheduled Classes by Hour on ${day}`
+          },
+          tooltip: {
+            callbacks: {
+              label: ctx => `${ctx.parsed.y} class(es) scheduled`
+            }
+          }
         },
-        tooltip: {
-          callbacks: {
-            label: function(context) {
-              const weekday = context.dataset.label;
-              const timeSlot = context.label;
-              const value = context.parsed.y;
-              return `Day ${weekday}, Time ${timeSlot}: ${value} class(es) scheduled`;
+        scales: {
+          y: {
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: 'Number of Scheduled Classes'
+            }
+          },
+          x: {
+            title: {
+              display: true,
+              text: 'Hour of Day'
             }
           }
         }
-      },
-      scales: {
-        y: {
-          beginAtZero: true,
-          title: {
-            display: true,
-            text: 'Number of Scheduled Classes'
-          }
-        },
-        x: {
-          title: {
-            display: true,
-            text: 'Time Slot'
-          }
-        }
       }
-    }
-  });
-}
+    });
+  }
 
 
     fetchBuildings();

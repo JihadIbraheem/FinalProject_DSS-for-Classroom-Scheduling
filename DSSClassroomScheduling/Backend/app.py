@@ -33,6 +33,8 @@ db = mysql.connector.connect(
 )
 
 
+###########################
+
 def get_connection():
     return mysql.connector.connect(
         host="34.165.87.21",
@@ -41,7 +43,16 @@ def get_connection():
         database="classroom_scheduler"
     )
 
-
+# API to fetch buildings list for frontend dropdown
+@app.route('/api/buildings', methods=['GET'])
+def fetch_buildings_for_dropdown():
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT building_id, building_name FROM buildings")
+    buildings = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return jsonify(buildings)
 
 # Reports route to render the frontend
 @app.route('/reports_statistics', methods=['GET'])
@@ -170,49 +181,10 @@ def generate_report():
     else:
         return "Invalid report type", 400
 
-from flask import jsonify
-from datetime import timedelta
-
-@app.route('/api/schedule_history')
-def get_schedule_history():
-    try:
-        with db.cursor(dictionary=True) as cursor:
-            cursor.execute("""
-                SELECT sh.*, 
-                       c.course_name,
-                       u.first_name AS username,
-                       cr_old.classroom_num AS old_classroom_num,
-                       b_old.building_name AS old_building,
-                       cr_new.classroom_num AS new_classroom_num,
-                       b_new.building_name AS new_building
-                FROM schedule_history sh
-                JOIN courses c ON sh.course_id = c.course_id
-                JOIN users u ON sh.updated_by_user_id = u.user_id
-                JOIN classrooms cr_old ON sh.old_classroom_id = cr_old.classroom_id
-                JOIN buildings b_old ON cr_old.building_id = b_old.building_id
-                JOIN classrooms cr_new ON sh.new_classroom_id = cr_new.classroom_id
-                JOIN buildings b_new ON cr_new.building_id = b_new.building_id
-                ORDER BY sh.update_timestamp DESC
-            """)
-            history = cursor.fetchall()
-
-            for row in history:
-                if isinstance(row.get("update_timestamp"), (datetime, timedelta)):
-                    row["update_timestamp"] = str(row["update_timestamp"])
-                if isinstance(row.get("old_time_start"), (datetime, timedelta)):
-                    row["old_time_start"] = str(row["old_time_start"])
-                if isinstance(row.get("old_time_end"), (datetime, timedelta)):
-                    row["old_time_end"] = str(row["old_time_end"])
-                if isinstance(row.get("new_time_start"), (datetime, timedelta)):
-                    row["new_time_start"] = str(row["new_time_start"])
-                if isinstance(row.get("new_time_end"), (datetime, timedelta)):
-                    row["new_time_end"] = str(row["new_time_end"])
-
-        return jsonify(history=history)
-
-    except Exception as e:
-        print("Error fetching schedule history:", e)
-        return jsonify(error="Internal server error"), 500
+    output.seek(0)
+    cursor.close()
+    conn.close()
+    return send_file(output, download_name=f"{report_type}_report.xlsx", as_attachment=True)
 
 # Visualization API: Sheltered classroom status
 @app.route('/api/classroom_shelter_status')
@@ -232,52 +204,69 @@ def api_classroom_shelter_status():
 
 
 # Visualization API: Estimated students per building by day/time
-@app.route('/api/estimated_students_chart')
-def api_estimated_students_chart():
+@app.route('/api/estimated_students_chart', methods=['GET'])
+def estimated_students_chart():
     day = request.args.get('day')
-    start = request.args.get('start_time')
-    end = request.args.get('end_time')
+    start_time = request.args.get('start_time')
+    end_time = request.args.get('end_time')
+
+    # Default values if not provided
+    if not start_time:
+        start_time = '08:00'
+    if not end_time:
+        end_time = '22:00'
 
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
+
     cursor.execute("""
-        SELECT b.building_name AS Building, SUM(c.students_num) AS EstimatedStudents
-        FROM schedules s
-        JOIN classrooms cl ON s.classroom_id = cl.classroom_id
-        JOIN buildings b ON cl.building_id = b.building_id
-        JOIN courses c ON s.course_id = c.course_id
-        WHERE s.weekday = %s AND s.time_start >= %s AND s.time_end <= %s
-        GROUP BY b.building_id
-    """, (day, start, end))
-    results = cursor.fetchall()
+    SELECT 
+        b.building_name AS Building,
+        SUM(c.students_num) AS EstimatedStudents
+    FROM schedules s
+    JOIN classrooms cr ON s.classroom_id = cr.classroom_id
+    JOIN buildings b ON cr.building_id = b.building_id
+    JOIN courses c ON s.course_id = c.course_id
+    WHERE s.weekday = %s
+      AND TIME(s.time_end) > %s    -- window start
+      AND TIME(s.time_start) < %s  -- window end
+    GROUP BY b.building_id
+    ORDER BY b.building_name
+""", (day, start_time, end_time))
+
+    result = cursor.fetchall()
+
     cursor.close()
     conn.close()
-    return jsonify(results)
+
+    return jsonify(result)
+
 
 
 # Visualization API: Peak usage chart (group by hour & weekday)
-@app.route('/api/peak_usage_chart')
-def api_peak_usage_chart():
+@app.route('/api/peak_usage_filtered')
+def api_peak_usage_filtered():
+    weekday = request.args.get('weekday')
+
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
+
     cursor.execute("""
-        SELECT 
-            CONCAT(LPAD(HOUR(time_start), 2, '0'), ':00-', LPAD(HOUR(time_end), 2, '0'), ':00') AS TimeSlot,
-            weekday AS Weekday,
-            COUNT(*) AS Count
+        SELECT HOUR(time_start) AS Hour, COUNT(*) AS Count
         FROM schedules
-        WHERE HOUR(time_start) BETWEEN 8 AND 21
-        GROUP BY TimeSlot, Weekday
-    """)
+        WHERE weekday = %s
+        GROUP BY HOUR(time_start)
+        ORDER BY Hour
+    """, (weekday,))
+
     results = cursor.fetchall()
     cursor.close()
     conn.close()
     return jsonify(results)
 
 
-    conn.close()
-    output.seek(0)
-    return send_file(output, download_name=f"{report_type}_report.xlsx", as_attachment=True)
+
+    
 ###########################
 
 
