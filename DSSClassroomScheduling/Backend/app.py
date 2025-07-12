@@ -680,6 +680,57 @@ def insert_courses_to_db(courses_df):
 def uploaded_file(filename):
     return send_from_directory('uploads', filename)
 
+@app.route('/resolve_conflict_direct', methods=['POST'])
+def resolve_conflict_direct():
+    try:
+        selected_classroom_id = request.form.get('selected_classroom')
+        course_data = json.loads(request.form.get('course_data'))
+        weekday = request.form.get('weekday')
+        start_time = request.form.get('start_time')
+        end_time = request.form.get('end_time')
+
+        if not selected_classroom_id or not selected_classroom_id.strip().isdigit():
+            flash("נבחר ערך לא תקין לכיתה. אנא בחר/י כיתה תקינה.")
+            return redirect(url_for('upload'))
+
+        selected_classroom_id = int(selected_classroom_id)
+
+        # הכנס קורס אם לא קיים
+        with db.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM courses WHERE course_id = %s", (course_data['course_id'],))
+            exists = cursor.fetchone()[0]
+            if not exists:
+                cursor.execute("""
+                    INSERT INTO courses (course_id, course_name, students_num)
+                    VALUES (%s, %s, %s)
+                """, (
+                    course_data['course_id'],
+                    course_data['course_name'],
+                    course_data['students_num']
+                ))
+                db.commit()
+
+        # הכנס לשיבוץ
+        with db.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO schedules (classroom_id, course_id, weekday, time_start, time_end)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (
+                selected_classroom_id,
+                course_data['course_id'],
+                weekday,
+                start_time,
+                end_time
+            ))
+            db.commit()
+
+        flash("Scheduling confirmed successfully ✅")
+        return redirect(url_for('upload'))
+
+    except Exception as e:
+        flash(f"Error during scheduling: {e}")
+        return redirect(url_for('upload'))
+
 def process_file(file, return_raw_df=False):
     import pandas as pd
 
@@ -766,9 +817,8 @@ def process_file(file, return_raw_df=False):
                                 'suggested_classroom': available[0] if available else None
                             })
 
-                    continue  # כל החלק טופל
+                    continue
 
-                # רק שיעור אחד
                 course_data = extract_course_details(cell_text)
                 if not course_data:
                     raise ValueError(f"Invalid course format at row {i+2}, column '{slot}': '{cell_text}'")
@@ -802,7 +852,7 @@ def process_file(file, return_raw_df=False):
 
 @app.route('/upload', methods=['GET', 'POST'])
 def upload():
-    upload_status = None  
+    upload_status = None
 
     if request.method == 'POST':
         if is_data_existing():
@@ -814,17 +864,14 @@ def upload():
             return redirect(url_for('upload'))
 
         try:
-            # ✅ קבלת קונפליקטים מהפונקציה
             schedule_data, course_data, conflicts = process_file(file)
 
             insert_courses_to_db(course_data)
             insert_data_to_db(schedule_data)
 
-            # ✅ אם יש קונפליקטים, שלח את המשתמש לדף הפתרון
             if conflicts:
-                session['pending_conflicts'] = conflicts
-                session.modified = True
-                return redirect(url_for('resolve_conflicts'))
+                upload_status = 'conflict'
+                return render_template('upload.html', data_exists=is_data_existing(), upload_status=upload_status, conflicts=conflicts)
 
             upload_status = 'success'
             flash('File uploaded and data inserted successfully!')
@@ -834,6 +881,7 @@ def upload():
 
     data_exists = is_data_existing()
     return render_template('upload.html', data_exists=data_exists, upload_status=upload_status)
+
 
 @app.route('/api/add_schedule_from_ui', methods=['POST'])
 def add_schedule_from_ui():
