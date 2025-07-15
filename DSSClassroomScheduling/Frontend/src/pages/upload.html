@@ -298,7 +298,7 @@ letter-spacing: 1px;
       <button type="submit" class="btn btn-primary">Upload Schedule</button>
     </form>
 
-    {% if conflicts %}
+{% if conflicts %}
   {% for conflict in conflicts %}
     <div style="background: #fef2f2; border: 1px solid #fca5a5; padding: 1.5rem; margin-top: 1.5rem; border-radius: 0.75rem;">
       <h3 style="color: #b91c1c; margin-bottom: 1rem;">⚠️ Conflict Detected</h3>
@@ -334,9 +334,19 @@ letter-spacing: 1px;
           <button class="btn btn-primary" type="submit">✅ Confirm Manual Assignment</button>
         </form>
       {% endif %}
+
+      <!-- כפתור דחייה -->
+      <form method="POST" action="{{ url_for('reject_conflict_direct') }}">
+        <input type="hidden" name="course_data" value='{{ conflict.course_data | tojson }}'>
+        <input type="hidden" name="weekday" value="{{ conflict.weekday }}">
+        <input type="hidden" name="start_time" value="{{ conflict.start_time }}">
+        <input type="hidden" name="end_time" value="{{ conflict.end_time }}">
+        <button class="btn btn-danger" type="submit" style="margin-top: 0.75rem;">🗑️ Reject This Conflict</button>
+      </form>
     </div>
   {% endfor %}
 {% endif %}
+
 
     <!-- טופס הזנה ידנית -->
     <form id="manual-form" action="/manual_schedule" method="POST" style="display:none;">

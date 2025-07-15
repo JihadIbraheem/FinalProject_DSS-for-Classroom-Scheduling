@@ -724,6 +724,11 @@ def resolve_conflict_direct():
             ))
             db.commit()
 
+        # הסר את הקונפליקט הנוכחי מרשימת הקונפליקטים
+        pending_conflicts = session.get('pending_conflicts', [])
+        if pending_conflicts:
+            session['pending_conflicts'] = pending_conflicts[1:]
+
         flash("Scheduling confirmed successfully ✅")
         return redirect(url_for('upload'))
 
@@ -731,8 +736,27 @@ def resolve_conflict_direct():
         flash(f"Error during scheduling: {e}")
         return redirect(url_for('upload'))
 
+def insert_conflict_to_db(classroom_id, course_data, weekday, start_time, end_time):
+    with db.cursor() as cursor:
+        # הכנס לקורסים
+        cursor.execute("""
+            INSERT INTO courses (course_id, course_name, lecturer_name, students_num)
+            VALUES (%s, %s, %s, %s)
+        """, (course_data['course_id'], course_data['course_name'],
+              course_data['lecturer_name'], course_data['students_num']))
+        course_db_id = cursor.lastrowid
+
+        # הכנס לשיבוץ
+        cursor.execute("""
+            INSERT INTO schedules (course_id, classroom_id, weekday, start_time, end_time, status)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (course_db_id, classroom_id, weekday, start_time, end_time, 'Confirmed'))
+
+        db.commit()
+
 def process_file(file, return_raw_df=False):
     import pandas as pd
+    from flask import session
 
     df = pd.read_excel(file)
     df.columns = df.columns.map(lambda x: str(x).strip())
@@ -845,6 +869,9 @@ def process_file(file, return_raw_df=False):
 
     schedule_df = merge_continuous_schedules(schedule_df)
 
+    # שמור את הקונפליקטים ב-session
+    session['pending_conflicts'] = pending_conflicts
+
     if return_raw_df:
         return schedule_df, courses_df, df
 
@@ -852,6 +879,7 @@ def process_file(file, return_raw_df=False):
 
 @app.route('/upload', methods=['GET', 'POST'])
 def upload():
+    from flask import session
     upload_status = None
 
     if request.method == 'POST':
@@ -864,14 +892,16 @@ def upload():
             return redirect(url_for('upload'))
 
         try:
-            schedule_data, course_data, conflicts = process_file(file)
+            schedule_data, course_data, _ = process_file(file)
 
             insert_courses_to_db(course_data)
             insert_data_to_db(schedule_data)
 
+            conflicts = session.get('pending_conflicts', [])
             if conflicts:
                 upload_status = 'conflict'
-                return render_template('upload.html', data_exists=is_data_existing(), upload_status=upload_status, conflicts=conflicts)
+                return render_template('upload.html', data_exists=is_data_existing(),
+                                       upload_status=upload_status, conflicts=conflicts)
 
             upload_status = 'success'
             flash('File uploaded and data inserted successfully!')
@@ -880,7 +910,41 @@ def upload():
             flash(f'An error occurred: {e}')
 
     data_exists = is_data_existing()
-    return render_template('upload.html', data_exists=data_exists, upload_status=upload_status)
+    conflicts = session.get('pending_conflicts', [])
+    return render_template('upload.html', data_exists=data_exists, upload_status=upload_status, conflicts=conflicts)
+
+@app.route('/reject_conflict_direct', methods=['POST'])
+def reject_conflict_direct():
+    try:
+        course_data = json.loads(request.form.get('course_data'))
+        weekday = request.form.get('weekday')
+        start_time = request.form.get('start_time')
+        end_time = request.form.get('end_time')
+
+        pending_conflicts = session.get('pending_conflicts', [])
+
+        # סנן החוצה את הקונפליקט שנדחה
+        updated_conflicts = [
+            c for c in pending_conflicts
+            if not (
+                c['course_data']['course_id'] == course_data['course_id'] and
+                c['weekday'] == weekday and
+                c['start_time'] == start_time and
+                c['end_time'] == end_time
+            )
+        ]
+
+        session['pending_conflicts'] = updated_conflicts
+
+        if updated_conflicts:
+            return redirect(url_for('upload'))
+        else:
+            flash("All conflicts resolved or dismissed.")
+            return redirect(url_for('upload'))
+
+    except Exception as e:
+        flash(f"Error rejecting conflict: {e}")
+        return redirect(url_for('upload'))
 
 
 @app.route('/api/add_schedule_from_ui', methods=['POST'])
@@ -992,6 +1056,11 @@ def delete_data():
         return redirect(url_for('upload'))
 
     delete_existing_data()
+
+    # נקה את הקונפליקטים המזוהים (אם קיימים)
+    session.pop('pending_conflicts', None)
+
+    flash('All data and conflicts have been deleted successfully.')
     return redirect(url_for('upload'))
 
 
