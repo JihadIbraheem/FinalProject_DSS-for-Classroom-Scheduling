@@ -1060,7 +1060,6 @@ def delete_data():
     # נקה את הקונפליקטים המזוהים (אם קיימים)
     session.pop('pending_conflicts', None)
 
-    flash('All data and conflicts have been deleted successfully.')
     return redirect(url_for('upload'))
 
 

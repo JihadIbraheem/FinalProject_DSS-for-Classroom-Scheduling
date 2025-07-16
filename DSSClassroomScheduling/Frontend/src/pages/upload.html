@@ -307,33 +307,25 @@ letter-spacing: 1px;
       <p><strong>Students:</strong> {{ conflict.course_data.students_num }}</p>
       <p><strong>Time:</strong> {{ conflict.weekday }} {{ conflict.start_time }} - {{ conflict.end_time }}</p>
 
-      {% if conflict.suggested_classroom %}
-        <form method="POST" action="{{ url_for('resolve_conflict_direct') }}">
+      <form method="POST" action="{{ url_for('resolve_conflict_direct') }}">
+        {% if conflict.suggested_classroom %}
           <p><strong>Suggested Classroom:</strong> {{ conflict.suggested_classroom.classroom_num }} |
              Capacity: {{ conflict.suggested_classroom.capacity }} |
              Building: {{ conflict.suggested_classroom.building_name }}</p>
 
           <input type="hidden" name="selected_classroom" value="{{ conflict.suggested_classroom.classroom_id }}">
-          <input type="hidden" name="course_data" value='{{ conflict.course_data | tojson }}'>
-          <input type="hidden" name="weekday" value="{{ conflict.weekday }}">
-          <input type="hidden" name="start_time" value="{{ conflict.start_time }}">
-          <input type="hidden" name="end_time" value="{{ conflict.end_time }}">
-          <button class="btn btn-primary" type="submit" style="margin-top: 1rem;">✅ Confirm This Scheduling</button>
-        </form>
-      {% else %}
-        <p style="color: #991b1b; font-weight: bold;">No suitable classroom found. Please assign one manually.</p>
-        <form method="POST" action="{{ url_for('resolve_conflicts') }}">
-          <div class="form-group">
-            <label>Classroom ID:</label>
-            <input type="text" name="selected_classroom" required style="width: 100%;">
-          </div>
-          <input type="hidden" name="course_data" value='{{ conflict.course_data | tojson }}'>
-          <input type="hidden" name="weekday" value="{{ conflict.weekday }}">
-          <input type="hidden" name="start_time" value="{{ conflict.start_time }}">
-          <input type="hidden" name="end_time" value="{{ conflict.end_time }}">
-          <button class="btn btn-primary" type="submit">✅ Confirm Manual Assignment</button>
-        </form>
-      {% endif %}
+        {% else %}
+          <p style="color: #991b1b; font-weight: bold;">
+            No suitable classroom found based on capacity. The largest available classroom has been selected.
+          </p>
+        {% endif %}
+
+        <input type="hidden" name="course_data" value='{{ conflict.course_data | tojson }}'>
+        <input type="hidden" name="weekday" value="{{ conflict.weekday }}">
+        <input type="hidden" name="start_time" value="{{ conflict.start_time }}">
+        <input type="hidden" name="end_time" value="{{ conflict.end_time }}">
+        <button class="btn btn-primary" type="submit" style="margin-top: 1rem;">✅ Confirm This Scheduling</button>
+      </form>
 
       <!-- כפתור דחייה -->
       <form method="POST" action="{{ url_for('reject_conflict_direct') }}">
@@ -341,11 +333,12 @@ letter-spacing: 1px;
         <input type="hidden" name="weekday" value="{{ conflict.weekday }}">
         <input type="hidden" name="start_time" value="{{ conflict.start_time }}">
         <input type="hidden" name="end_time" value="{{ conflict.end_time }}">
-        <button class="btn btn-danger" type="submit" style="margin-top: 0.75rem;">🗑️ Reject This Conflict</button>
+        <button class="btn btn-danger" type="submit" style="margin-top: 0.75rem;">🗑️ Delete</button>
       </form>
     </div>
   {% endfor %}
 {% endif %}
+
 
 
     <!-- טופס הזנה ידנית -->
