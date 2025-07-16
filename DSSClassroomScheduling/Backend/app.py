@@ -476,7 +476,7 @@ def resolve_conflicts():
         if not selected_classroom_id or not selected_classroom_id.strip().isdigit():
             flash("נבחר ערך לא תקין לכיתה. אנא בחר/י כיתה תקינה.")
             return redirect(url_for('resolve_conflicts'))
-
+        
         selected_classroom_id = int(selected_classroom_id)
 
         # 🟢 הכנס קודם לקורסים (אם לא קיים)
@@ -534,28 +534,66 @@ def resolve_conflicts():
                            start_time=start_time,
                            end_time=end_time)
 
-def find_available_classrooms(request_data):
-    weekday = request_data['weekday']
-    start_time = request_data['start_time']
-    end_time = request_data['end_time']
-    students_num = request_data['students_num']
+def find_available_classrooms(conflict):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
 
-    with db.cursor(dictionary=True) as cursor:
-        cursor.execute("""
-            SELECT c.classroom_id, c.classroom_num, c.capacity, b.building_name
-            FROM classrooms c
-            JOIN buildings b ON c.building_id = b.building_id
-            WHERE c.capacity >= %s AND c.classroom_id NOT IN (
-                SELECT classroom_id FROM schedules
-                WHERE weekday = %s AND (
-                    (time_start < %s AND time_end > %s) OR
-                    (time_start < %s AND time_end > %s) OR
-                    (time_start >= %s AND time_end <= %s)
-                )
-            )
-            ORDER BY c.capacity ASC
-        """, (students_num, weekday, end_time, end_time, start_time, start_time, start_time, end_time))
-        return cursor.fetchall()
+    weekday = conflict['weekday']
+    start_time = conflict['start_time']
+    end_time = conflict['end_time']
+    students_num = int(conflict.get('students_num', 0))
+
+    # חיפוש לפי כל האילוצים (קיבולת + פנויה בזמן)
+    query = """
+        SELECT c.*, b.building_name
+        FROM classrooms c
+        JOIN buildings b ON c.building_id = b.building_id
+        WHERE c.capacity >= %s
+          AND c.classroom_id NOT IN (
+              SELECT classroom_id
+              FROM schedules
+              WHERE weekday = %s
+                AND NOT (time_end <= %s OR time_start >= %s)
+          )
+        ORDER BY c.capacity ASC
+        LIMIT 1
+    """
+    cursor.execute(query, (students_num, weekday, start_time, end_time))
+    result = cursor.fetchone()
+
+    if result:
+        conn.close()
+        result['reason'] = 'strict'
+        return [result]  # התאמה מלאה לפי כל האילוצים
+
+    # fallback – חיפוש לפי זמן בלבד (ללא מגבלת קיבולת)
+    fallback = None
+    fallback_query = """
+        SELECT c.*, b.building_name
+        FROM classrooms c
+        JOIN buildings b ON c.building_id = b.building_id
+        WHERE c.classroom_id NOT IN (
+            SELECT classroom_id
+            FROM schedules
+            WHERE weekday = %s
+              AND NOT (time_end <= %s OR time_start >= %s)
+        )
+        ORDER BY c.capacity DESC
+        LIMIT 1
+    """
+    cursor.execute(fallback_query, (weekday, start_time, end_time))
+    fallback = cursor.fetchone()
+
+    conn.close()
+
+    if fallback:
+        fallback['reason'] = 'fallback'
+        return [fallback]
+
+    # אין התאמה בכלל
+    return []
+
+
 
 def merge_continuous_schedules(df):
     df['time_start'] = df['time_start'].astype(str).apply(lambda x: re.sub(r'[^\d:]', '', x))
@@ -832,6 +870,20 @@ def process_file(file, return_raw_df=False):
                                 'students_num': course_data['students_num']
                             })
 
+                            if not available:
+                                fallback = find_available_classrooms({
+                                    'weekday': weekday,
+                                    'start_time': start_time + ':00',
+                                    'end_time': end_time + ':00',
+                                    'students_num': 0
+                                })
+
+                                if fallback:
+                                    fallback.sort(key=lambda x: x['capacity'], reverse=True)
+                                    available = [fallback[0]]
+                                else:
+                                    available = []
+
                             pending_conflicts.append({
                                 'original_classroom_id': classroom_id,
                                 'weekday': weekday,
@@ -876,6 +928,7 @@ def process_file(file, return_raw_df=False):
         return schedule_df, courses_df, df
 
     return schedule_df, courses_df, pending_conflicts
+
 
 @app.route('/upload', methods=['GET', 'POST'])
 def upload():

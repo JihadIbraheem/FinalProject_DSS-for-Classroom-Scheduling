@@ -313,11 +313,19 @@ letter-spacing: 1px;
              Capacity: {{ conflict.suggested_classroom.capacity }} |
              Building: {{ conflict.suggested_classroom.building_name }}</p>
 
+          {% if conflict.suggested_classroom.reason == 'fallback' %}
+            <p style="color: #991b1b; font-weight: bold;">
+              No suitable classroom matched all constraints.<br>
+              The best available room (based on time only) has been selected.
+            </p>
+          {% endif %}
+
           <input type="hidden" name="selected_classroom" value="{{ conflict.suggested_classroom.classroom_id }}">
         {% else %}
           <p style="color: #991b1b; font-weight: bold;">
-            No suitable classroom found based on capacity. The largest available classroom has been selected.
+            ❌ No available classroom found for this time slot.
           </p>
+          <input type="hidden" name="selected_classroom" value="-1">
         {% endif %}
 
         <input type="hidden" name="course_data" value='{{ conflict.course_data | tojson }}'>
