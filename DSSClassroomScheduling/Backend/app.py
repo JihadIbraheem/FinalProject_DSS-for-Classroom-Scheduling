@@ -762,10 +762,20 @@ def resolve_conflict_direct():
             ))
             db.commit()
 
-        # הסר את הקונפליקט הנוכחי מרשימת הקונפליקטים
+        # הסר את הקונפליקט המתאים בלבד
         pending_conflicts = session.get('pending_conflicts', [])
-        if pending_conflicts:
-            session['pending_conflicts'] = pending_conflicts[1:]
+        updated_conflicts = []
+
+        for conflict in pending_conflicts:
+            if not (
+                conflict['course_data']['course_id'] == course_data['course_id'] and
+                conflict['weekday'] == weekday and
+                conflict['start_time'] == start_time and
+                conflict['end_time'] == end_time
+            ):
+                updated_conflicts.append(conflict)
+
+        session['pending_conflicts'] = updated_conflicts
 
         flash("Scheduling confirmed successfully ✅")
         return redirect(url_for('upload'))
@@ -922,12 +932,38 @@ def process_file(file, return_raw_df=False):
     schedule_df = merge_continuous_schedules(schedule_df)
 
     # שמור את הקונפליקטים ב-session
-    session['pending_conflicts'] = pending_conflicts
+    session['pending_conflicts'] = merge_conflicts(pending_conflicts)
 
     if return_raw_df:
         return schedule_df, courses_df, df
 
     return schedule_df, courses_df, pending_conflicts
+
+
+def merge_conflicts(conflicts):
+    merged = []
+    conflicts.sort(key=lambda x: (x['course_data']['course_id'], x['weekday'], x['start_time']))
+
+    for conflict in conflicts:
+        if not merged:
+            merged.append(conflict)
+            continue
+
+        last = merged[-1]
+
+        same_course = conflict['course_data']['course_id'] == last['course_data']['course_id']
+        same_day = conflict['weekday'] == last['weekday']
+
+        last_end = datetime.strptime(last['end_time'], "%H:%M:%S")
+        current_start = datetime.strptime(conflict['start_time'], "%H:%M:%S")
+
+        if same_course and same_day and last_end == current_start:
+            # עדכון הזמן של ה־end_time
+            merged[-1]['end_time'] = conflict['end_time']
+        else:
+            merged.append(conflict)
+
+    return merged
 
 
 @app.route('/upload', methods=['GET', 'POST'])
@@ -990,14 +1026,16 @@ def reject_conflict_direct():
         session['pending_conflicts'] = updated_conflicts
 
         if updated_conflicts:
+            flash("Conflict rejected successfully ❌")
             return redirect(url_for('upload'))
         else:
-            flash("All conflicts resolved or dismissed.")
+            flash("All conflicts resolved or dismissed ✅")
             return redirect(url_for('upload'))
 
     except Exception as e:
         flash(f"Error rejecting conflict: {e}")
         return redirect(url_for('upload'))
+
 
 
 @app.route('/api/add_schedule_from_ui', methods=['POST'])
