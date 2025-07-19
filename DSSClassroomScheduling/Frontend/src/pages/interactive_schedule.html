@@ -836,6 +836,24 @@ async function submitNewSchedule() {
   }
 }
 
+document.addEventListener("DOMContentLoaded", function () {
+  fetch('/api/buildings')
+    .then(response => response.json())
+    .then(buildings => {
+      const select = document.getElementById('filter-building');
+      if (!select) return;
+
+      buildings.forEach(building => {
+        const option = document.createElement('option');
+        option.value = building.building_name;
+        option.textContent = building.building_name;
+        select.appendChild(option);
+      });
+    })
+    .catch(error => {
+      console.error('Error fetching buildings:', error);
+    });
+});
 
     function filterSchedules() {
       const idFilter = document.getElementById('filter-course-id').value.toLowerCase();

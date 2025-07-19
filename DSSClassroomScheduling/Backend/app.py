@@ -2023,20 +2023,6 @@ def api_schedules():
         print(f"Database error: {err}")
         return jsonify({"error": "Database error"}), 500
 
-@app.route('/api/buildings')
-def get_buildings():
-    try:
-        db = get_connection() 
-        with db.cursor(dictionary=True) as cursor:
-            cursor.execute("SELECT building_id, building_name FROM buildings")
-            buildings = cursor.fetchall()
-        db.close()  
-        return jsonify(buildings=buildings)
-
-    except mysql.connector.Error as err:
-        print(f"Database error: {err}")
-        return jsonify({"error": "Database error"}), 500
-
 
 
 @app.route('/second_schedule')

@@ -171,7 +171,7 @@ function loadBuildingFilterOptions() {
     .then(response => response.json())
     .then(data => {
       const filter = document.getElementById('building-filter');
-      data.buildings.forEach(building => {
+      data.forEach(building => { // במקום data.buildings
         const option = document.createElement('option');
         option.value = building.building_name;
         option.textContent = building.building_name;
@@ -179,6 +179,7 @@ function loadBuildingFilterOptions() {
       });
     });
 }
+
 
 
 function closeEditModal() {
@@ -358,7 +359,7 @@ function loadBuildingOptions() {
     .then(data => {
       const select = document.getElementById('existing-building-select');
       select.innerHTML = '';
-      data.buildings.forEach(building => {
+      data.forEach(building => { // במקום data.buildings
         const option = document.createElement('option');
         option.value = building.building_id;
         option.textContent = building.building_name;
@@ -366,6 +367,7 @@ function loadBuildingOptions() {
       });
     });
 }
+
 
 function submitNewClassroom() {
   const classroom_num = document.getElementById('new-classroom-num').value;
@@ -434,7 +436,9 @@ function filterByBuilding() {
   const cards = document.querySelectorAll('.schedule-card');
 
   cards.forEach(card => {
-    const buildingName = card.querySelector('p strong')?.nextSibling?.textContent?.trim()?.toLowerCase();
+    const buildingText = Array.from(card.querySelectorAll('p')).find(p => p.textContent.startsWith('Building:'));
+    const buildingName = buildingText ? buildingText.textContent.replace('Building:', '').trim().toLowerCase() : '';
+
     if (selected === 'all' || buildingName === selected) {
       card.style.display = 'block';
     } else {
@@ -442,6 +446,7 @@ function filterByBuilding() {
     }
   });
 }
+
 
 async function loadClassrooms() {
   const res = await fetch('/api/classrooms');
