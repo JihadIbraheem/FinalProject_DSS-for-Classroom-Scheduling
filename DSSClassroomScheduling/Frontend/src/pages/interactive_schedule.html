@@ -321,6 +321,10 @@ letter-spacing: 1px;
       <select id="filter-building" onchange="filterSchedules()">
          <option value="">Any Building</option>
         </select>
+      <select id="filter-classroom" onchange="filterSchedules()">
+        <option value="">Any Classroom</option>
+      </select>
+
     </div>
 
 <div style="display: flex; justify-content: center; gap: 15px; margin-bottom: 20px;">
@@ -553,6 +557,34 @@ async function loadScheduleHistory() {
   });
 }
 
+document.getElementById('filter-building').addEventListener('change', async function () {
+  const buildingName = this.value;
+
+  const classroomSelect = document.getElementById('filter-classroom');
+  classroomSelect.innerHTML = `<option value="">Any Classroom</option>`;
+
+  if (!buildingName) {
+    filterSchedules();
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/classrooms_by_building?building_name=${encodeURIComponent(buildingName)}`);
+    const classrooms = await res.json();
+
+    classrooms.forEach(c => {
+      const option = document.createElement('option');
+      option.value = c.classroom_num;
+      option.textContent = c.classroom_num.split('-').pop();  // רק 3 ספרות אחרונות
+      classroomSelect.appendChild(option);
+    });
+  } catch (err) {
+    console.error("Error loading classrooms:", err);
+  }
+
+  filterSchedules();
+});
+
 function filterHistoryCards() {
   const searchValue = document.getElementById('history-search-input').value.toLowerCase();
   const cards = document.querySelectorAll('#history-cards .history-card');
@@ -562,7 +594,6 @@ function filterHistoryCards() {
     card.style.display = courseName.includes(searchValue) ? '' : 'none';
   });
 }
-
 
 function renderCards() {
   const container = document.getElementById('schedule-cards-container');
@@ -583,99 +614,94 @@ function renderCards() {
       issueTooltip = "Number of students is missing or less than 10";
     }
 
+    const classroomShort = r.classroom_num?.split('-').pop();  // שלוש ספרות אחרונות
+
     const card = document.createElement('div');
     card.className = 'schedule-card';
     card.dataset.course = (r.course_id + ' ' + r.course_name).toLowerCase();
     card.dataset.lecturer = r.lecturer_name.toLowerCase();
     card.dataset.weekday = r.weekday.toLowerCase();
     card.dataset.building = r.building_name.toLowerCase();
+    card.dataset.classroom = classroomShort;
     card.dataset.issue = hasIssue ? 'yes' : 'no';
 
-card.innerHTML = `
-  <div class="card-header" style="
-    background: linear-gradient(to right, #3B82F6, #2347a9);
-    color: white;
-    padding: 8px 12px;
-    border-radius: 8px 8px 0 0;
-    font-weight: bold;
-    font-size: 1.05rem;">
-    ${r.course_name}
-     ${hasIssue ? `<span title="${issueTooltip}" style="color: #DC2626; cursor: help;">🔧</span>` : ''}
-  </div>
-<p style="font-weight: bold; color: #1e3a8a; font-size: 0.95rem;">
-  <strong>Course ID:</strong> 
-  <span dir="ltr" style="display: inline-block;">
-    ${r.course_id.replace(/(\d)([א-ת])/, '$1 $2')}
-  </span>
-</p>
+    card.innerHTML = `
+      <div class="card-header" style="
+        background: linear-gradient(to right, #3B82F6, #2347a9);
+        color: white;
+        padding: 8px 12px;
+        border-radius: 8px 8px 0 0;
+        font-weight: bold;
+        font-size: 1.05rem;">
+        ${r.course_name}
+        ${hasIssue ? `<span title="${issueTooltip}" style="color: #DC2626; cursor: help;">🔧</span>` : ''}
+      </div>
+      <p style="font-weight: bold; color: #1e3a8a; font-size: 0.95rem;">
+        <strong>Course ID:</strong> 
+        <span dir="ltr" style="display: inline-block;">
+          ${r.course_id.replace(/(\d)([א-ת])/, '$1 $2')}
+        </span>
+      </p>
+      <p><strong>Classroom:</strong> ${classroomShort}</p>
+      <p><strong>Building:</strong> ${r.building_name}</p>
+      <p><strong>Lecturer:</strong> ${r.lecturer_name || '—'}</p>
+      <p><strong>Students:</strong> ${r.students_num || '—'}</p>
+      <p><strong>Day:</strong> ${r.weekday}</p>
+      <p><strong>Time:</strong> ${r.time_start} - ${r.time_end}</p>
 
+      <div class="actions" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;">
+        <button onclick="editRow(${r.schedule_id})" style="
+          background-color: #3B82F6;
+          color: white;
+          border: none;
+          padding: 8px 12px;
+          border-radius: 6px;
+          font-weight: bold;
+          cursor: pointer;
+          transition: 0.3s;
+        " onmouseover="this.style.backgroundColor='#2563EB'; this.style.transform='scale(1.05)'"
+          onmouseout="this.style.backgroundColor='#3B82F6'; this.style.transform='scale(1)'">
+          Edit Schedule
+        </button>
 
-<p><strong>Classroom:</strong> ${r.classroom_num?.split('-').pop()}</p>
+        <button onclick='editCourse(
+          ${JSON.stringify(r.course_id || "")}, 
+          ${JSON.stringify(r.course_name || "")}, 
+          ${JSON.stringify(r.lecturer_name || "")}, 
+          ${Number.isInteger(r.students_num) ? r.students_num : 0}
+        )' style="
+          background-color: #10B981;
+          color: white;
+          border: none;
+          padding: 8px 12px;
+          border-radius: 6px;
+          font-weight: bold;
+          cursor: pointer;
+          transition: 0.3s;
+        " onmouseover="this.style.backgroundColor='#059669'; this.style.transform='scale(1.05)'"
+          onmouseout="this.style.backgroundColor='#10B981'; this.style.transform='scale(1)'">
+          Fix Course Info
+        </button>
 
-  <p><strong>Building:</strong> ${r.building_name}</p>
-  <p><strong>Lecturer:</strong> ${r.lecturer_name || '—'}</p>
-  <p><strong>Students:</strong> ${r.students_num || '—'}</p>
-  <p><strong>Day:</strong> ${r.weekday}</p>
-  <p><strong>Time:</strong> ${r.time_start} - ${r.time_end}</p>
-
-  <div class="actions" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;">
-    <button onclick="editRow(${r.schedule_id})" style="
-      background-color: #3B82F6;
-      color: white;
-      border: none;
-      padding: 8px 12px;
-      border-radius: 6px;
-      font-weight: bold;
-      cursor: pointer;
-      transition: 0.3s;
-    " onmouseover="this.style.backgroundColor='#2563EB'; this.style.transform='scale(1.05)'"
-      onmouseout="this.style.backgroundColor='#3B82F6'; this.style.transform='scale(1)'">
-      Edit Schedule
-    </button>
-
-<button onclick='editCourse(
-  ${JSON.stringify(r.course_id || "")}, 
-  ${JSON.stringify(r.course_name || "")}, 
-  ${JSON.stringify(r.lecturer_name || "")}, 
-  ${Number.isInteger(r.students_num) ? r.students_num : 0}
-)'
-
-
- style="
-      background-color: #10B981;
-      color: white;
-      border: none;
-      padding: 8px 12px;
-      border-radius: 6px;
-      font-weight: bold;
-      cursor: pointer;
-      transition: 0.3s;
-    " onmouseover="this.style.backgroundColor='#059669'; this.style.transform='scale(1.05)'"
-      onmouseout="this.style.backgroundColor='#10B981'; this.style.transform='scale(1)'">
-      Fix Course Info
-    </button>
-
-    <button onclick="confirmDelete('${r.schedule_id}', '${r.course_id}')" style="
-      background-color: #DC2626;
-      color: white;
-      border: none;
-      padding: 8px 12px;
-      border-radius: 6px;
-      font-weight: bold;
-      cursor: pointer;
-      transition: 0.3s;
-    " onmouseover="this.style.backgroundColor='#B91C1C'; this.style.transform='scale(1.05)'"
-      onmouseout="this.style.backgroundColor='#DC2626'; this.style.transform='scale(1)'">
-      🗑️ Delete
-    </button>
-  </div>
-`;
-
+        <button onclick="confirmDelete('${r.schedule_id}', '${r.course_id}')" style="
+          background-color: #DC2626;
+          color: white;
+          border: none;
+          padding: 8px 12px;
+          border-radius: 6px;
+          font-weight: bold;
+          cursor: pointer;
+          transition: 0.3s;
+        " onmouseover="this.style.backgroundColor='#B91C1C'; this.style.transform='scale(1.05)'"
+          onmouseout="this.style.backgroundColor='#DC2626'; this.style.transform='scale(1)'">
+          🗑️ Delete
+        </button>
+      </div>
+    `;
 
     container.appendChild(card);
   });
 }
-
 
 function toggleHistory() {
   const historySection = document.getElementById('schedule-history');
@@ -854,23 +880,33 @@ document.addEventListener("DOMContentLoaded", function () {
       console.error('Error fetching buildings:', error);
     });
 });
+function filterSchedules() {
+  const courseId = document.getElementById('filter-course-id').value.toLowerCase();
+  const courseName = document.getElementById('filter-course-name').value.toLowerCase();
+  const lecturer = document.getElementById('filter-lecturer').value.toLowerCase();
+  const weekday = document.getElementById('filter-weekday').value.toLowerCase();
+  const building = document.getElementById('filter-building').value.toLowerCase();
+  const classroom = document.getElementById('filter-classroom').value;
 
-    function filterSchedules() {
-      const idFilter = document.getElementById('filter-course-id').value.toLowerCase();
-      const nameFilter = document.getElementById('filter-course-name').value.toLowerCase();
-      const lectFilter = document.getElementById('filter-lecturer').value.toLowerCase();
-      const dayFilter = document.getElementById('filter-weekday').value.toLowerCase();
-      const bldFilter = document.getElementById('filter-building').value.toLowerCase();
+  const cards = document.querySelectorAll('.schedule-card');
 
-      document.querySelectorAll('.schedule-card').forEach(card => {
-        const matchId = !idFilter || card.dataset.course.includes(idFilter);
-        const matchName = !nameFilter || card.dataset.course.includes(nameFilter);
-        const matchLect = !lectFilter || card.dataset.lecturer.includes(lectFilter);
-        const matchDay = !dayFilter || card.dataset.weekday === dayFilter;
-        const matchBld = !bldFilter || card.dataset.building === bldFilter;
-        card.style.display = (matchId && matchName && matchLect && matchDay && matchBld) ? '' : 'none';
-      });
-    }
+  cards.forEach(card => {
+    const matchesCourse = card.dataset.course.includes(courseId) && card.dataset.course.includes(courseName);
+    const matchesLecturer = card.dataset.lecturer.includes(lecturer);
+    const matchesDay = weekday === '' || card.dataset.weekday === weekday;
+    const matchesBuilding = building === '' || card.dataset.building === building;
+
+    const classroomShort = card.dataset.classroom;
+    const matchesClassroom = classroom === '' || classroom.endsWith(classroomShort);  // שימוש ב-endsWith
+
+    const show = matchesCourse && matchesLecturer && matchesDay && matchesBuilding && matchesClassroom;
+
+    card.style.display = show ? '' : 'none';
+  });
+}
+
+
+
 
 let showingOnlyIssues = false;
 
