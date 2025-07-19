@@ -14,6 +14,15 @@
       background: #bfd2f8;
       color:#374151;
     }
+.text-green {
+  color: green;
+  font-weight: bold;
+}
+
+.text-gray {
+  color: gray;
+  font-weight: bold;
+}
 
     header {
       background:#1E3A8A; color:#fff;
@@ -307,11 +316,21 @@ letter-spacing: 1px;
       <p><strong>Students:</strong> {{ conflict.course_data.students_num }}</p>
       <p><strong>Time:</strong> {{ conflict.weekday }} {{ conflict.start_time }} - {{ conflict.end_time }}</p>
 
+      <!-- טופס אישור מיידי -->
       <form method="POST" action="{{ url_for('resolve_conflict_direct') }}">
         {% if conflict.suggested_classroom %}
-          <p><strong>Suggested Classroom:</strong> {{ conflict.suggested_classroom.classroom_num }} |
-             Capacity: {{ conflict.suggested_classroom.capacity }} |
-             Building: {{ conflict.suggested_classroom.building_name }}</p>
+          <p><strong>Suggested Classroom:</strong> {{ conflict.suggested_classroom.classroom_num.split('-')[-1] }} |
+            Capacity: {{ conflict.suggested_classroom.capacity }} |
+            Building: {{ conflict.suggested_classroom.building_name }} |
+            Remote Learning:
+            <span class="{{ 'text-green' if conflict.suggested_classroom.is_remote_learning else 'text-gray' }}">
+              {{ 'Yes' if conflict.suggested_classroom.is_remote_learning else 'No' }}
+            </span> |
+            Sheltered:
+            <span class="{{ 'text-green' if conflict.suggested_classroom.is_sheltered else 'text-gray' }}">
+              {{ 'Yes' if conflict.suggested_classroom.is_sheltered else 'No' }}
+            </span>
+          </p>
 
           {% if conflict.suggested_classroom.reason == 'fallback' %}
             <p style="color: #991b1b; font-weight: bold;">
@@ -335,7 +354,18 @@ letter-spacing: 1px;
         <button class="btn btn-primary" type="submit" style="margin-top: 1rem;">✅ Confirm This Scheduling</button>
       </form>
 
-      <!-- כפתור דחייה -->
+      <!-- כפתור הצגת כיתות פנויות -->
+      <form method="POST" action="{{ url_for('upload') }}">
+        <input type="hidden" name="action" value="view_classrooms">
+        <input type="hidden" name="conflict_index" value="{{ loop.index0 }}">
+        <input type="hidden" name="course_data" value='{{ conflict.course_data | tojson }}'>
+        <input type="hidden" name="weekday" value="{{ conflict.weekday }}">
+        <input type="hidden" name="start_time" value="{{ conflict.start_time }}">
+        <input type="hidden" name="end_time" value="{{ conflict.end_time }}">
+        <button class="btn btn-outline-primary" type="submit" style="margin-top: 0.75rem;">View Available Classrooms</button>
+      </form>
+
+      <!-- כפתור מחיקה -->
       <form method="POST" action="{{ url_for('reject_conflict_direct') }}">
         <input type="hidden" name="course_data" value='{{ conflict.course_data | tojson }}'>
         <input type="hidden" name="weekday" value="{{ conflict.weekday }}">
@@ -343,11 +373,51 @@ letter-spacing: 1px;
         <input type="hidden" name="end_time" value="{{ conflict.end_time }}">
         <button class="btn btn-danger" type="submit" style="margin-top: 0.75rem;">🗑️ Delete</button>
       </form>
+
+      <!-- הצגת רשימת כיתות זמינות -->
+      {% if conflict.available_options %}
+        <div style="background: #ecfdf5; padding: 1.25rem; border: 2px solid #34d399; border-radius: 1rem; margin-top: 1.5rem;">
+          <h4 style="color: #065f46; font-size: 1.2rem; font-weight: 600; margin-bottom: 1rem;">Available Classrooms</h4>
+          <div style="display: flex; flex-direction: column; gap: 1rem;" id="rooms-list-{{ loop.index0 }}">
+            {% for room in conflict.available_options %}
+              {% set is_visible = loop.index <= 3 %}
+              <div class="available-room" style="{{ 'display: block;' if is_visible else 'display: none;' }} border: 1px solid #d1fae5; padding: 1rem; border-radius: 0.75rem; background: #ffffff;">
+                <p><strong>Room:</strong> {{ room.classroom_num.split('-')[-1] }}</p>
+                <p><strong>Capacity:</strong> {{ room.capacity }}</p>
+                <p><strong>Building:</strong> {{ room.building_name }}</p>
+                <p><strong>Remote Learning:</strong>
+                  <span class="{{ 'text-green' if room.is_remote_learning else 'text-gray' }}">
+                    {{ 'Yes' if room.is_remote_learning else 'No' }}
+                  </span>
+                </p>
+                <p><strong>Sheltered:</strong>
+                  <span class="{{ 'text-green' if room.is_sheltered else 'text-gray' }}">
+                    {{ 'Yes' if room.is_sheltered else 'No' }}
+                  </span>
+                </p>
+
+                <form method="POST" action="{{ url_for('resolve_conflict_direct') }}">
+                  <input type="hidden" name="selected_classroom" value="{{ room.classroom_id }}">
+                  <input type="hidden" name="course_data" value='{{ conflict.course_data | tojson }}'>
+                  <input type="hidden" name="weekday" value="{{ conflict.weekday }}">
+                  <input type="hidden" name="start_time" value="{{ conflict.start_time }}">
+                  <input type="hidden" name="end_time" value="{{ conflict.end_time }}">
+                  <button type="submit" class="btn btn-primary" style="margin-top: 0.5rem;">✅ Assign This Room</button>
+                </form>
+              </div>
+            {% endfor %}
+          </div>
+
+          {% if conflict.available_options|length > 3 %}
+            <div style="margin-top: 1rem;">
+              <button onclick="toggleRooms('{{ loop.index0 }}')" class="btn btn-outline-secondary">Show More</button>
+            </div>
+          {% endif %}
+        </div>
+      {% endif %}
     </div>
   {% endfor %}
 {% endif %}
-
-
 
     <!-- טופס הזנה ידנית -->
     <form id="manual-form" action="/manual_schedule" method="POST" style="display:none;">
@@ -472,8 +542,21 @@ function hideManualTooltip() {
     document.getElementById("upload-info-icon").style.display = "block";
   }
 };
+function toggleRooms(index) {
+  const list = document.getElementById('rooms-list-' + index);
+  const hidden = list.querySelectorAll('.available-room[style*="display: none"]');
+  hidden.forEach(div => div.style.display = 'block');
+  event.target.style.display = 'none';
+}
 
-
+  document.addEventListener("DOMContentLoaded", () => {
+    const blocks = document.querySelectorAll("[style*='Available Classrooms']");
+    blocks.forEach(block => {
+      block.style.opacity = 0;
+      block.style.transition = "opacity 0.5s ease-in-out";
+      setTimeout(() => block.style.opacity = 1, 100);
+    });
+  });
   function showTooltip() {
   document.getElementById('tooltip').style.display = 'block';
 }

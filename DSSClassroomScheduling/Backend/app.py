@@ -534,7 +534,7 @@ def resolve_conflicts():
                            start_time=start_time,
                            end_time=end_time)
 
-def find_available_classrooms(conflict):
+def find_available_classrooms(conflict, all_matches=False):
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
 
@@ -543,56 +543,67 @@ def find_available_classrooms(conflict):
     end_time = conflict['end_time']
     students_num = int(conflict.get('students_num', 0))
 
-    # חיפוש לפי כל האילוצים (קיבולת + פנויה בזמן)
-    query = """
+    if isinstance(start_time, str):
+        if len(start_time) == 5:
+            start_time += ":00"
+        start_time = datetime.strptime(start_time, "%H:%M:%S").time()
+
+    if isinstance(end_time, str):
+        if len(end_time) == 5:
+            end_time += ":00"
+        end_time = datetime.strptime(end_time, "%H:%M:%S").time()
+
+    query_base = """
         SELECT c.*, b.building_name
         FROM classrooms c
         JOIN buildings b ON c.building_id = b.building_id
-        WHERE c.capacity >= %s
+        WHERE {capacity_clause}
           AND c.classroom_id NOT IN (
               SELECT classroom_id
               FROM schedules
               WHERE weekday = %s
                 AND NOT (time_end <= %s OR time_start >= %s)
           )
-        ORDER BY c.capacity ASC
-        LIMIT 1
+        ORDER BY c.capacity {order}
+        {limit}
     """
+
+    if all_matches:
+        query = query_base.format(capacity_clause="c.capacity >= %s", order="ASC", limit="")
+        cursor.execute(query, (students_num, weekday, start_time, end_time))
+        results = cursor.fetchall()
+        conn.close()
+
+        for r in results:
+            r['reason'] = 'strict'
+            r['is_remote_learning'] = bool(int(r.get('is_remote_learning') or 0))
+            r['is_sheltered'] = bool(int(r.get('is_sheltered') or 0))
+
+        return results
+
+    query = query_base.format(capacity_clause="c.capacity >= %s", order="ASC", limit="LIMIT 1")
     cursor.execute(query, (students_num, weekday, start_time, end_time))
     result = cursor.fetchone()
 
     if result:
         conn.close()
         result['reason'] = 'strict'
-        return [result]  # התאמה מלאה לפי כל האילוצים
+        result['is_remote_learning'] = bool(int(result.get('is_remote_learning') or 0))
+        result['is_sheltered'] = bool(int(result.get('is_sheltered') or 0))
+        return [result]
 
-    # fallback – חיפוש לפי זמן בלבד (ללא מגבלת קיבולת)
-    fallback = None
-    fallback_query = """
-        SELECT c.*, b.building_name
-        FROM classrooms c
-        JOIN buildings b ON c.building_id = b.building_id
-        WHERE c.classroom_id NOT IN (
-            SELECT classroom_id
-            FROM schedules
-            WHERE weekday = %s
-              AND NOT (time_end <= %s OR time_start >= %s)
-        )
-        ORDER BY c.capacity DESC
-        LIMIT 1
-    """
+    fallback_query = query_base.format(capacity_clause="1", order="DESC", limit="LIMIT 1")
     cursor.execute(fallback_query, (weekday, start_time, end_time))
     fallback = cursor.fetchone()
-
     conn.close()
 
     if fallback:
         fallback['reason'] = 'fallback'
+        fallback['is_remote_learning'] = bool(int(fallback.get('is_remote_learning') or 0))
+        fallback['is_sheltered'] = bool(int(fallback.get('is_sheltered') or 0))
         return [fallback]
 
-    # אין התאמה בכלל
     return []
-
 
 
 def merge_continuous_schedules(df):
@@ -965,13 +976,52 @@ def merge_conflicts(conflicts):
 
     return merged
 
-
 @app.route('/upload', methods=['GET', 'POST'])
 def upload():
     from flask import session
     upload_status = None
 
     if request.method == 'POST':
+        if request.form.get('action') == 'view_classrooms':
+            try:
+                conflict_index = int(request.form.get('conflict_index'))
+                weekday = request.form.get('weekday')
+                start_time_str = request.form.get('start_time', '').strip()
+                end_time_str = request.form.get('end_time', '').strip()
+                course_data = json.loads(request.form.get('course_data'))
+
+                if not start_time_str or not end_time_str:
+                    raise ValueError("Missing start_time or end_time")
+
+                # הבטחת פורמט אחיד HH:MM:SS
+                if len(start_time_str) == 5:
+                    start_time_str += ":00"
+                if len(end_time_str) == 5:
+                    end_time_str += ":00"
+
+                # חיפוש כל הכיתות האפשריות
+                available_classrooms = find_available_classrooms({
+                    'weekday': weekday,
+                    'start_time': start_time_str,
+                    'end_time': end_time_str,
+                    'students_num': course_data.get('students_num', 0)
+                }, all_matches=True)
+
+                pending_conflicts = session.get('pending_conflicts', [])
+                if 0 <= conflict_index < len(pending_conflicts):
+                    pending_conflicts[conflict_index]['available_options'] = available_classrooms
+                    session['pending_conflicts'] = pending_conflicts
+
+                upload_status = 'conflict'
+                return render_template('upload.html',
+                                       data_exists=is_data_existing(),
+                                       upload_status=upload_status,
+                                       conflicts=pending_conflicts)
+            except Exception as e:
+                flash(f'Error while fetching available classrooms: {e}')
+                return redirect(url_for('upload'))
+
+        # העלאה רגילה
         if is_data_existing():
             return redirect(url_for('upload'))
 
@@ -982,15 +1032,16 @@ def upload():
 
         try:
             schedule_data, course_data, _ = process_file(file)
-
             insert_courses_to_db(course_data)
             insert_data_to_db(schedule_data)
 
             conflicts = session.get('pending_conflicts', [])
             if conflicts:
                 upload_status = 'conflict'
-                return render_template('upload.html', data_exists=is_data_existing(),
-                                       upload_status=upload_status, conflicts=conflicts)
+                return render_template('upload.html',
+                                       data_exists=is_data_existing(),
+                                       upload_status=upload_status,
+                                       conflicts=conflicts)
 
             upload_status = 'success'
             flash('File uploaded and data inserted successfully!')
@@ -1000,7 +1051,10 @@ def upload():
 
     data_exists = is_data_existing()
     conflicts = session.get('pending_conflicts', [])
-    return render_template('upload.html', data_exists=data_exists, upload_status=upload_status, conflicts=conflicts)
+    return render_template('upload.html',
+                           data_exists=data_exists,
+                           upload_status=upload_status,
+                           conflicts=conflicts)
 
 @app.route('/reject_conflict_direct', methods=['POST'])
 def reject_conflict_direct():
