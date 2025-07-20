@@ -2040,7 +2040,8 @@ def api_schedules():
                   s.time_start,
                   s.time_end,
                   c.is_remote_learning,
-                  c.is_sheltered
+                  c.is_sheltered,
+                  c.capacity AS classroom_capacity
                 FROM schedules s
                 JOIN classrooms c ON s.classroom_id = c.classroom_id
                 JOIN buildings b ON c.building_id = b.building_id
@@ -2062,14 +2063,20 @@ def api_schedules():
                 elif val is None:
                     row[key] = ""
 
+            # חישוב אם מספר הסטודנטים חורג מהקיבולת
+            try:
+                students = int(row.get("students_num") or 0)
+                capacity = int(row.get("classroom_capacity") or 0)
+                row["exceeds_capacity"] = students > capacity
+            except:
+                row["exceeds_capacity"] = False
+
         db.close()  
         return jsonify(schedules=rows)
 
     except mysql.connector.Error as err:
         print(f"Database error: {err}")
         return jsonify({"error": "Database error"}), 500
-
-
 
 @app.route('/second_schedule')
 def second_schedule():

@@ -337,7 +337,7 @@ letter-spacing: 1px;
 </button>
 
 <button onclick="toggleShowOnlyIssues()" id="issues-toggle" class="button-glass button-red">
-  🔧 Show Incomplete Entries
+  ⚠️ Show Capacity Issues
 </button>
 
 
@@ -513,6 +513,8 @@ letter-spacing: 1px;
 
   <script>
     let schedules = [];
+    let showOnlyIssues = false;
+
 
 window.addEventListener('DOMContentLoaded', async () => {
   const res = await fetch('/api/schedules');
@@ -649,14 +651,12 @@ function renderCards() {
   let anyRendered = false;
 
   schedules.forEach(r => {
-    // ✅ סינון לפי כיתה אם נדרש
     if (classroomToFilter) {
-  const classroomShort = (r.classroom_num || '').split('-').pop();
-  if (parseInt(classroomShort) !== classroomToFilter) {
-    return; // דלג על שיבוצים שלא בכיתה הרצויה
-  }
-}
-
+      const classroomShort = (r.classroom_num || '').split('-').pop();
+      if (parseInt(classroomShort) !== classroomToFilter) {
+        return;
+      }
+    }
 
     const hasLecturerIssue = !r.lecturer_name || r.lecturer_name.trim() === '';
     const hasStudentsIssue = !r.students_num || r.students_num < 1;
@@ -690,29 +690,28 @@ function renderCards() {
       problematicIds.includes(r.schedule_id)
     );
 
-    if (isProblematic) {
-  card.style.border = "2px solid #DC2626";
-  card.style.background = "linear-gradient(to bottom, #fee2e2, #fff)";
-  card.style.boxShadow = "0 0 8px rgba(220, 38, 38, 0.3)";
-  card.style.position = "relative";
+    if (isProblematic || r.exceeds_capacity) {
+      card.style.border = "2px solid #DC2626";
+      card.style.background = "linear-gradient(to bottom, #fee2e2, #fff)";
+      card.style.boxShadow = "0 0 8px rgba(220, 38, 38, 0.3)";
+      card.style.position = "relative";
 
-  warningMessage = `
-    <div style="
-      background-color: #DC2626;
-      color: white;
-      padding: 6px 10px;
-      border-radius: 6px;
-      font-weight: bold;
-      font-size: 0.9rem;
-      margin-top: 12px;
-      box-shadow: 0 0 4px rgba(0,0,0,0.1);
-      display: flex;
-      align-items: center;
-      gap: 8px;">
-      ⚠️ Students exceed classroom capacity!
-    </div>`;
-}
-
+      warningMessage = `
+        <div style="
+          background-color: #DC2626;
+          color: white;
+          padding: 6px 10px;
+          border-radius: 6px;
+          font-weight: bold;
+          font-size: 0.9rem;
+          margin-top: 12px;
+          box-shadow: 0 0 4px rgba(0,0,0,0.1);
+          display: flex;
+          align-items: center;
+          gap: 8px;">
+          ⚠️ Students exceed classroom capacity!
+        </div>`;
+    }
 
     card.innerHTML = `
       <div class="card-header" style="
@@ -731,7 +730,7 @@ function renderCards() {
           ${r.course_id.replace(/(\\d)([א-ת])/, '$1 $2')}
         </span>
       </p>
-      <p><strong>Classroom:</strong> ${classroomShort}</p>
+      <p><strong>Classroom:</strong> ${classroomShort} <span style="color: #6b7280; font-size: 0.85rem;">(Capacity: ${r.classroom_capacity || '—'})</span></p>
       <p><strong>Building:</strong> ${r.building_name}</p>
       <p><strong>Lecturer:</strong> ${r.lecturer_name || '—'}</p>
       <p><strong>Students:</strong> ${r.students_num || '—'}</p>
@@ -798,7 +797,6 @@ function renderCards() {
     </div>`;
   }
 
-  // ניקוי sessionStorage שנמצא בשימוש
   sessionStorage.removeItem('filterClassroomId');
   sessionStorage.removeItem('problematicSchedules');
   sessionStorage.removeItem('problematicClassroomId');
@@ -1010,6 +1008,8 @@ document.addEventListener("DOMContentLoaded", function () {
       console.error('Error fetching buildings:', error);
     });
 });
+
+
 function filterSchedules() {
   const courseId = document.getElementById('filter-course-id').value.toLowerCase();
   const courseName = document.getElementById('filter-course-name').value.toLowerCase();
@@ -1029,13 +1029,14 @@ function filterSchedules() {
     const classroomShort = card.dataset.classroom;
     const matchesClassroom = classroom === '' || classroom.endsWith(classroomShort);  // שימוש ב-endsWith
 
-    const show = matchesCourse && matchesLecturer && matchesDay && matchesBuilding && matchesClassroom;
+    const hasCapacityIssue = card.innerHTML.includes("⚠️ Students exceed classroom capacity!");
 
-    card.style.display = show ? '' : 'none';
+    const matchesFilters = matchesCourse && matchesLecturer && matchesDay && matchesBuilding && matchesClassroom;
+    const shouldShow = matchesFilters && (!showOnlyIssues || hasCapacityIssue);
+
+    card.style.display = shouldShow ? '' : 'none';
   });
 }
-
-
 
 
 let showingOnlyIssues = false;
@@ -1043,7 +1044,7 @@ let showingOnlyIssues = false;
 function toggleShowOnlyIssues() {
   showingOnlyIssues = !showingOnlyIssues;
   const toggleBtn = document.getElementById('issues-toggle');
-  toggleBtn.textContent = showingOnlyIssues ? '🔧 Show All' : '🔧 Show Incomplete Entries';
+  toggleBtn.textContent = showingOnlyIssues ? 'Show All' : '⚠️ Show Capacity Issues';
 
   document.querySelectorAll('.schedule-card').forEach(card => {
     if (showingOnlyIssues && card.dataset.issue !== 'yes') {
@@ -1173,12 +1174,16 @@ async function loadBuildings() {
   }
 }
 
+function toggleShowOnlyIssues() {
+  showOnlyIssues = !showOnlyIssues;
+  document.getElementById('issues-toggle').textContent = showOnlyIssues ? 'Show All Entries' : '⚠️ Show Capacity Issues';
+  filterSchedules();
+}
 
-    // Classroom selection modal (if your flow still uses it)
+
     function closeClassroomModal() {
       document.getElementById('classroomModalBackdrop').style.display = 'none';
     }
-    // ...populate and show #classroom-options-list as needed in your existing logic...
 
     // Initialize
 window.addEventListener('DOMContentLoaded', () => {
