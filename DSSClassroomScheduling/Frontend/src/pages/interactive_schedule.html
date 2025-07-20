@@ -514,14 +514,54 @@ letter-spacing: 1px;
   <script>
     let schedules = [];
 
+window.addEventListener('DOMContentLoaded', async () => {
+  const res = await fetch('/api/schedules');
+  schedules = await res.json();
+  renderCards();
+
+  // ✅ סינון לפי כיתה שעודכנה
+  const filterClassroomId = sessionStorage.getItem('filterClassroomId');
+  if (filterClassroomId) {
+    const classroomFilter = document.getElementById('filter-classroom');
+
+    // מוסיף את הכיתה לרשימת הסינון אם היא לא קיימת
+    let alreadyExists = false;
+    for (let option of classroomFilter.options) {
+      if (option.value === filterClassroomId) {
+        alreadyExists = true;
+        break;
+      }
+    }
+    if (!alreadyExists) {
+      const newOption = document.createElement('option');
+      newOption.value = filterClassroomId;
+      newOption.textContent = filterClassroomId.padStart(3, '0');
+      classroomFilter.appendChild(newOption);
+    }
+
+    classroomFilter.value = filterClassroomId;
+    filterSchedules();  // קריאה לסינון בפועל
+  }
+});
+
+
 async function loadSchedules() {
   const res = await fetch('/api/schedules');
   const json = await res.json();
   schedules = json.schedules || json;
   renderCards();
   filterSchedules();
-}
 
+  // ✅ סינון אוטומטי אם יש classroomId מהקיבולת ששונתה
+  const problematicClassroom = sessionStorage.getItem('problematicClassroomId');
+  if (problematicClassroom) {
+    const classroomFilter = document.getElementById('filter-classroom');
+    if (classroomFilter) {
+      classroomFilter.value = problematicClassroom.padStart(3, '0');
+      filterSchedules();
+    }
+  }
+}
 async function loadScheduleHistory() {
   const res = await fetch('/api/schedule_history');
   const data = await res.json();
@@ -555,6 +595,7 @@ async function loadScheduleHistory() {
     `;
     container.appendChild(card);
   });
+
 }
 
 document.getElementById('filter-building').addEventListener('change', async function () {
@@ -599,31 +640,79 @@ function renderCards() {
   const container = document.getElementById('schedule-cards-container');
   container.innerHTML = '';
 
+  const problematic = JSON.parse(sessionStorage.getItem('problematicSchedules') || "[]");
+  const problematicIds = problematic.map(s => s.schedule_id);
+  const problematicClassroom = sessionStorage.getItem('problematicClassroomId');
+  const classroomToFilterRaw = sessionStorage.getItem('filterClassroomId');
+  const classroomToFilter = classroomToFilterRaw ? parseInt(classroomToFilterRaw) : null;
+
+  let anyRendered = false;
+
   schedules.forEach(r => {
+    // ✅ סינון לפי כיתה אם נדרש
+    if (classroomToFilter) {
+  const classroomShort = (r.classroom_num || '').split('-').pop();
+  if (parseInt(classroomShort) !== classroomToFilter) {
+    return; // דלג על שיבוצים שלא בכיתה הרצויה
+  }
+}
+
+
     const hasLecturerIssue = !r.lecturer_name || r.lecturer_name.trim() === '';
-    const hasStudentsIssue = !r.students_num || r.students_num < 10;
+    const hasStudentsIssue = !r.students_num || r.students_num < 1;
     const hasIssue = hasLecturerIssue || hasStudentsIssue;
 
-    // Tooltip message for the issue
     let issueTooltip = '';
     if (hasLecturerIssue && hasStudentsIssue) {
-      issueTooltip = "Missing lecturer name and number of students is missing or less than 10";
+      issueTooltip = "Missing lecturer name and number of students is missing or less than 0";
     } else if (hasLecturerIssue) {
       issueTooltip = "Missing lecturer name";
     } else if (hasStudentsIssue) {
-      issueTooltip = "Number of students is missing or less than 10";
+      issueTooltip = "Number of students is missing or less than 0";
     }
 
-    const classroomShort = r.classroom_num?.split('-').pop();  // שלוש ספרות אחרונות
+    const classroomShort = r.classroom_num?.split('-').pop();
 
     const card = document.createElement('div');
     card.className = 'schedule-card';
     card.dataset.course = (r.course_id + ' ' + r.course_name).toLowerCase();
-    card.dataset.lecturer = r.lecturer_name.toLowerCase();
+    card.dataset.lecturer = (r.lecturer_name || '').toLowerCase();
     card.dataset.weekday = r.weekday.toLowerCase();
     card.dataset.building = r.building_name.toLowerCase();
     card.dataset.classroom = classroomShort;
     card.dataset.issue = hasIssue ? 'yes' : 'no';
+    card.dataset.scheduleid = r.schedule_id;
+    card.dataset.classroomid = r.classroom_id;
+
+    let warningMessage = '';
+    const isProblematic = (
+      parseInt(r.classroom_id) === parseInt(problematicClassroom) &&
+      problematicIds.includes(r.schedule_id)
+    );
+
+    if (isProblematic) {
+  card.style.border = "2px solid #DC2626";
+  card.style.background = "linear-gradient(to bottom, #fee2e2, #fff)";
+  card.style.boxShadow = "0 0 8px rgba(220, 38, 38, 0.3)";
+  card.style.position = "relative";
+
+  warningMessage = `
+    <div style="
+      background-color: #DC2626;
+      color: white;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-weight: bold;
+      font-size: 0.9rem;
+      margin-top: 12px;
+      box-shadow: 0 0 4px rgba(0,0,0,0.1);
+      display: flex;
+      align-items: center;
+      gap: 8px;">
+      ⚠️ Students exceed classroom capacity!
+    </div>`;
+}
+
 
     card.innerHTML = `
       <div class="card-header" style="
@@ -639,7 +728,7 @@ function renderCards() {
       <p style="font-weight: bold; color: #1e3a8a; font-size: 0.95rem;">
         <strong>Course ID:</strong> 
         <span dir="ltr" style="display: inline-block;">
-          ${r.course_id.replace(/(\d)([א-ת])/, '$1 $2')}
+          ${r.course_id.replace(/(\\d)([א-ת])/, '$1 $2')}
         </span>
       </p>
       <p><strong>Classroom:</strong> ${classroomShort}</p>
@@ -648,7 +737,7 @@ function renderCards() {
       <p><strong>Students:</strong> ${r.students_num || '—'}</p>
       <p><strong>Day:</strong> ${r.weekday}</p>
       <p><strong>Time:</strong> ${r.time_start} - ${r.time_end}</p>
-
+      ${warningMessage}
       <div class="actions" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;">
         <button onclick="editRow(${r.schedule_id})" style="
           background-color: #3B82F6;
@@ -700,7 +789,19 @@ function renderCards() {
     `;
 
     container.appendChild(card);
+    anyRendered = true;
   });
+
+  if (!anyRendered) {
+    container.innerHTML = `<div style="text-align:center; margin-top:2rem; font-weight:bold; color:#b91c1c;">
+      ⚠️ No schedules found for the updated classroom.
+    </div>`;
+  }
+
+  // ניקוי sessionStorage שנמצא בשימוש
+  sessionStorage.removeItem('filterClassroomId');
+  sessionStorage.removeItem('problematicSchedules');
+  sessionStorage.removeItem('problematicClassroomId');
 }
 
 function toggleHistory() {
@@ -799,6 +900,35 @@ function confirmDelete(scheduleId, courseId) {
         });
     }
 }
+
+document.addEventListener("DOMContentLoaded", () => {
+  const problematic = JSON.parse(sessionStorage.getItem('problematicSchedules') || "[]");
+  const problematicIds = problematic.map(s => s.schedule_id);
+  const problematicClassroom = sessionStorage.getItem('problematicClassroomId');
+
+  // אם יש בעיות – תסמן רק אותן ותסתיר את השאר
+  if (problematic.length > 0 && problematicClassroom) {
+    document.querySelectorAll('.schedule-card').forEach(card => {
+      const isProblematic = (
+        card.dataset.classroomid === problematicClassroom &&
+        problematicIds.includes(parseInt(card.dataset.scheduleid))
+      );
+
+      if (isProblematic) {
+        card.style.border = "3px solid #DC2626";
+        card.style.backgroundColor = "#fef2f2";
+        card.style.display = ''; // הצג
+      } else {
+        card.style.display = 'none'; // הסתר
+      }
+    });
+  }
+
+  // נקה את SessionStorage אחרי טעינה
+  sessionStorage.removeItem('problematicSchedules');
+  sessionStorage.removeItem('problematicClassroomId');
+});
+
 
 async function submitNewSchedule() {
   const duration = parseFloat(document.getElementById('new-duration').value);
@@ -1051,10 +1181,10 @@ async function loadBuildings() {
     // ...populate and show #classroom-options-list as needed in your existing logic...
 
     // Initialize
-    window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', () => {
   loadSchedules();
   loadBuildings();
-  });
+});
 
   </script>
 </body>

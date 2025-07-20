@@ -1540,6 +1540,19 @@ def get_schedule_details(schedule_id):
 
     return jsonify(schedule)
 
+@app.route('/api/classroom/<int:classroom_id>')
+def get_classroom_info(classroom_id):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM classrooms WHERE classroom_id = %s", (classroom_id,))
+    classroom = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    if classroom:
+        return jsonify(classroom)
+    else:
+        return jsonify({"error": "Classroom not found"}), 404
+
 @app.route('/api/save_schedule_update', methods=['POST'])
 def save_schedule_update():
     data = request.get_json()
@@ -1842,20 +1855,21 @@ def get_classrooms():
     cursor.close()
     return jsonify(classrooms=classrooms)
 
+
 @app.route('/api/update_classroom', methods=['POST'])
 def update_classroom():
     data = request.get_json()
     classroom_id = data.get('classroom_id')
     floor_num = data.get('floor_num')
-    capacity = data.get('capacity')
+    capacity = int(data.get('capacity'))
     is_remote_learning = data.get('is_remote_learning')
     is_sheltered = data.get('is_sheltered')
-    board_count = data.get('board_count', 0)  # מספר לוחות חדש
+    board_count = int(data.get('board_count', 0))
 
     try:
-        cursor = db.cursor()
+        cursor = db.cursor(dictionary=True)
 
-        # עדכון נתוני הכיתה
+        # עדכון פרטי הכיתה
         cursor.execute("""
             UPDATE classrooms
             SET floor_num = %s,
@@ -1865,21 +1879,31 @@ def update_classroom():
             WHERE classroom_id = %s
         """, (floor_num, capacity, is_remote_learning, is_sheltered, classroom_id))
 
-        # מחיקת כל הלוחות הקיימים עבור הכיתה
+        # מחיקת הלוחות הקיימים
         cursor.execute("DELETE FROM boards WHERE classroom_id = %s", (classroom_id,))
 
-        # הכנסת הלוחות החדשים עם גודל ברירת מחדל (נניח גודל 1)
-        for _ in range(int(board_count)):
+        # הוספת לוחות חדשים
+        for _ in range(board_count):
             cursor.execute("INSERT INTO boards (board_size, classroom_id) VALUES (%s, %s)", (1, classroom_id))
+
+        # חיפוש שיבוצים שהקיבולת שלהם חורגת מהחדשה
+        cursor.execute("""
+            SELECT s.schedule_id, s.course_id, s.classroom_id, c.classroom_num, co.course_name, co.students_num
+            FROM schedules s
+            JOIN courses co ON s.course_id = co.course_id
+            JOIN classrooms c ON s.classroom_id = c.classroom_id
+            WHERE s.classroom_id = %s AND co.students_num > %s
+        """, (classroom_id, capacity))
+
+        problematic_schedules = cursor.fetchall()
 
         db.commit()
         cursor.close()
-        return jsonify(success=True)
+
+        return jsonify(success=True, problematic_schedules=problematic_schedules)
 
     except Exception as e:
         return jsonify(success=False, message=str(e)), 500
-
-
 
 
 @app.route('/uploads/img/<building>/<room>/<filename>')

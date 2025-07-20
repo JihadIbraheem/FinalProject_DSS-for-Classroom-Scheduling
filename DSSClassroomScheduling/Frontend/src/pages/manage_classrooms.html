@@ -188,38 +188,58 @@ function closeEditModal() {
 
 function saveEdit() {
   if (!confirm("Are you sure you want to save the changes to this classroom?")) {
-    return; // Cancel was pressed
+    return;
   }
 
-  const floor = document.getElementById('edit-floor').value;
+  const classroom_id = currentClassroomId;  // מוגדר בפונקציה openEditModal
+  const floor_num = document.getElementById('edit-floor').value;
   const capacity = document.getElementById('edit-capacity').value;
   const is_remote_learning = parseInt(document.getElementById('edit-remote-select').value);
   const is_sheltered = parseInt(document.getElementById('edit-sheltered-select').value);
   const board_count = parseInt(document.getElementById('edit-board-count').value);
 
-
   fetch('/api/update_classroom', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      classroom_id: currentClassroomId,
-      floor_num: floor,
+      classroom_id,
+      floor_num,
       capacity,
       is_remote_learning,
       is_sheltered,
       board_count
     })
   })
-  .then(res => res.json())
+  .then(response => response.json())
   .then(data => {
     if (data.success) {
-      closeEditModal();
-      loadClassrooms();
+      if (data.problematic_schedules && data.problematic_schedules.length > 0) {
+        // שליפת מספר כיתה מקוצר מהשרת לפי classroom_id
+        fetch(`/api/classroom/${classroom_id}`)
+          .then(response => response.json())
+          .then(classroom => {
+            const classroomShort = (classroom.classroom_num || '').split('-').pop();
+            sessionStorage.setItem('problematicClassroomId', classroom_id);
+            sessionStorage.setItem('problematicSchedules', JSON.stringify(data.problematic_schedules));
+            sessionStorage.setItem('filterClassroomId', classroomShort);
+            alert("Capacity updated, but some schedules exceed the new capacity. Redirecting to check...");
+            window.location.href = "/interactive_schedule";
+          })
+          .catch(err => {
+            console.error("Failed to fetch classroom_num:", err);
+            alert("Classroom updated, but failed to redirect properly.");
+          });
+      } else {
+        alert("Classroom updated successfully.");
+        location.reload();
+      }
     } else {
-      alert('Update failed: ' + data.message);
+      alert("Error: " + data.message);
     }
   });
 }
+
+
 
 
 function renderClassroomCards(classrooms) {
