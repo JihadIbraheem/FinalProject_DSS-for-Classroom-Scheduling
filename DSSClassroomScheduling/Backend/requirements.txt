@@ -2,3 +2,4 @@ flask
 pandas
 mysql-connector-python
 gunicorn
+openpyxl
