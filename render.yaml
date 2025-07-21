@@ -3,6 +3,5 @@ services:
     name: dss-classroom-scheduler
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --chdir=DSSClassroomScheduling/Backend
-    workingDir: .
-
+    startCommand: gunicorn app:app
+    workingDir: DSSClassroomScheduling/Backend
