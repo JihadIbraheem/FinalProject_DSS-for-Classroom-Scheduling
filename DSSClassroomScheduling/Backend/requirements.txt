@@ -1,8 +1,3 @@
 flask
-io
-os
-re
-json
 pandas
-mysql.connector
-datetime
+mysql-connector-python
