@@ -3,6 +3,11 @@ from flask import jsonify, Response, send_from_directory
 ##########################
 from flask import send_file
 import io
+from io import BytesIO
+from flask import Blueprint
+from io import BytesIO
+from sqlalchemy import text
+from openpyxl import Workbook
 ###########################
 import os
 import pandas as pd
@@ -43,27 +48,7 @@ def get_connection():
         database="classroom_scheduler"
     )
 
-@app.route('/api/classrooms_by_building')
-def get_classrooms_by_building():
-    building_name = request.args.get('building_name')
-    if not building_name:
-        return jsonify([])
-
-    try:
-        cursor = db.cursor(dictionary=True)
-        query = """
-            SELECT c.classroom_id, c.classroom_num, c.building_id
-            FROM classrooms c
-            JOIN buildings b ON c.building_id = b.building_id
-            WHERE b.building_name = %s
-        """
-        cursor.execute(query, (building_name,))
-        classrooms = cursor.fetchall()
-        return jsonify(classrooms)
-    except Exception as e:
-        print("Error:", e)
-        return jsonify([]), 500
-
+reports_bp = Blueprint('reports', __name__)
 
 # API to fetch buildings list for frontend dropdown
 @app.route('/api/buildings', methods=['GET'])
@@ -85,6 +70,7 @@ def reports_statistics():
 @app.route('/generate_report', methods=['POST'])
 def generate_report():
     report_type = request.form.get('report_type')
+    building_id = request.form.get('building_id')
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     output = io.BytesIO()
@@ -146,20 +132,10 @@ def generate_report():
             GROUP BY b.building_id
         """, conn)
 
-        time_df = pd.read_sql("""
-            SELECT 
-                CONCAT(LPAD(HOUR(time_start), 2, '0'), ':00-', LPAD(HOUR(time_end), 2, '0'), ':00') AS `Time Slot`,
-                weekday, COUNT(*) AS 'usage'
-            FROM schedules
-            WHERE HOUR(time_start) BETWEEN 8 AND 21
-            GROUP BY `Time Slot`, weekday
-        """, conn)
-        time_pivot = time_df.pivot(index="Time Slot", columns="weekday", values="usage").fillna(0)
 
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             summary_df.to_excel(writer, sheet_name='Summary', index=False)
             building_df.to_excel(writer, sheet_name='Building Breakdown', index=False)
-            time_pivot.to_excel(writer, sheet_name='Time Slot Utilization')
 
     elif report_type == 'estimated_students':
         df = pd.read_sql("""
@@ -189,17 +165,77 @@ def generate_report():
 
         df.to_excel(output, index=False)
 
-    elif report_type == 'reschedule_needed':
-        df = pd.read_sql("""
-            SELECT * FROM schedules
-            WHERE classroom_id NOT IN (SELECT classroom_id FROM classrooms)
-        """, conn)
-        df.to_excel(output, index=False)
-
     elif report_type == 'history':
         df = pd.read_sql("SELECT * FROM schedule_history", conn)
         df.to_excel(output, index=False)
 
+    elif report_type == 'students_by_hour':
+        df = pd.read_sql("""
+            SELECT 
+                b.building_name,
+                c.classroom_num,
+                c.capacity,
+                s.weekday,
+                s.time_start,
+                s.time_end,
+                co.students_num AS enrolled_students
+            FROM schedules s
+            JOIN classrooms c ON s.classroom_id = c.classroom_id
+            JOIN buildings b ON c.building_id = b.building_id
+            JOIN courses co ON s.course_id = co.course_id
+            WHERE b.building_id = %s
+        """, conn, params=(building_id,))
+
+        if df.empty:
+            return "No data found for this building", 404
+
+
+        # Extract hour ranges
+        df['start_hour'] = df['time_start'].dt.components['hours']
+        df['end_hour'] = df['time_end'].dt.components['hours']
+        df['hour_range'] = df.apply(lambda row: list(range(row['start_hour'], row['end_hour'])), axis=1)
+
+        # Expand each row by hour
+        expanded_rows = []
+        for _, row in df.iterrows():
+            for h in row['hour_range']:
+                expanded_rows.append({
+                    'Classroom': row['classroom_num'],
+                    'Building': row['building_name'],
+                    'Capacity': row['capacity'],
+                    'Weekday': row['weekday'],
+                    'Hour': f"{h:02d}:00",
+                    'Students': row['enrolled_students']
+                })
+
+        result_df = pd.DataFrame(expanded_rows)
+
+        # Group and cap student counts to classroom capacity
+        grouped = result_df.groupby(
+            ['Classroom', 'Building', 'Capacity', 'Weekday', 'Hour']
+        )['Students'].sum().reset_index()
+
+        grouped['Students'] = grouped.apply(
+            lambda row: min(row['Students'], row['Capacity']),
+            axis=1
+        )
+
+        # Pivot: Hours become columns
+        pivot = grouped.pivot_table(
+            index=['Classroom', 'Building', 'Capacity', 'Weekday'],
+            columns='Hour',
+            values='Students',
+            aggfunc='sum',
+            fill_value=0
+        )
+
+        pivot.reset_index(inplace=True)
+
+        # Export to Excel
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            pivot.to_excel(writer, index=False, sheet_name='Report')
+    
     else:
         return "Invalid report type", 400
 
@@ -224,71 +260,6 @@ def api_classroom_shelter_status():
     conn.close()
     return jsonify(results)
 
-
-# Visualization API: Estimated students per building by day/time
-@app.route('/api/estimated_students_chart', methods=['GET'])
-def estimated_students_chart():
-    day = request.args.get('day')
-    start_time = request.args.get('start_time')
-    end_time = request.args.get('end_time')
-
-    # Default values if not provided
-    if not start_time:
-        start_time = '08:00'
-    if not end_time:
-        end_time = '22:00'
-
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-
-    cursor.execute("""
-    SELECT 
-        b.building_name AS Building,
-        SUM(c.students_num) AS EstimatedStudents
-    FROM schedules s
-    JOIN classrooms cr ON s.classroom_id = cr.classroom_id
-    JOIN buildings b ON cr.building_id = b.building_id
-    JOIN courses c ON s.course_id = c.course_id
-    WHERE s.weekday = %s
-      AND TIME(s.time_end) > %s    -- window start
-      AND TIME(s.time_start) < %s  -- window end
-    GROUP BY b.building_id
-    ORDER BY b.building_name
-""", (day, start_time, end_time))
-
-    result = cursor.fetchall()
-
-    cursor.close()
-    conn.close()
-
-    return jsonify(result)
-
-
-
-# Visualization API: Peak usage chart (group by hour & weekday)
-@app.route('/api/peak_usage_filtered')
-def api_peak_usage_filtered():
-    weekday = request.args.get('weekday')
-
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-
-    cursor.execute("""
-        SELECT HOUR(time_start) AS Hour, COUNT(*) AS Count
-        FROM schedules
-        WHERE weekday = %s
-        GROUP BY HOUR(time_start)
-        ORDER BY Hour
-    """, (weekday,))
-
-    results = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    return jsonify(results)
-
-
-
-    
 ###########################
 
 

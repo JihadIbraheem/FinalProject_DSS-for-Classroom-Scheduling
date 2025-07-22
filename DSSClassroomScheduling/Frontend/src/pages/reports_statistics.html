@@ -143,8 +143,8 @@
         <option value="">-- Select Report --</option>
         <option value="utilization">Classroom Utilization</option>
         <option value="estimated_students">Estimated Student Numbers</option>
-        <option value="reschedule_needed">Lessons Needing Rescheduling</option>
         <option value="history">Changes & Rescheduling History</option>
+        <option value="students_by_hour">Students per Classroom by Hour</option>
       </select>
 
       <div id="buildingFilter" class="filters">
@@ -189,39 +189,7 @@
       </div>
     </section>
 
-    <section class="chart-box">
-      <h3>2. Estimated Students by Building (Filter by Day & Time)</h3>
-      <label for="daySelect">Day:</label>
-      <select id="daySelect">
-        <option value="א'">א'</option>
-        <option value="ב'">ב'</option>
-        <option value="ג'">ג'</option>
-        <option value="ד'">ד'</option>
-        <option value="ה'">ה'</option>
-        <option value="ו'">ו'</option>
-      </select>
-      <label for="startTime">Start Time:</label>
-      <input type="time" id="startTime" value="08:00">
-      <label for="endTime">End Time:</label>
-      <input type="time" id="endTime" value="22:00">
-      <button onclick="loadEstimatedStudentsChart()" class="btn" style="margin-top: 10px;">Update Chart</button>
-      <canvas id="studentsChart"></canvas>
-    </section>
 
-<section class="chart-box">
-  <h2>3. Peak Usage by Hour (Filtered by Weekday)</h2>
-  <label for="weekdaySelect">Select Day:</label>
-  <select id="weekdaySelect">
-    <option value="א'">א'</option>
-    <option value="ב'">ב'</option>
-    <option value="ג'">ג'</option>
-    <option value="ד'">ד'</option>
-    <option value="ה'">ה'</option>
-    <option value="ו'">ו'</option>
-  </select>
-  <button onclick="loadFilteredPeakChart()">Show Peak Hours</button>
-  <canvas id="filteredPeakChart" height="150"></canvas>
-</section>
   </div>
 </main>
 
@@ -236,37 +204,63 @@
     const buildingFilter = document.getElementById('buildingFilter');
     const timeFilter = document.getElementById('timeFilter');
 
-    reportType.addEventListener('change', () => {
-      const val = reportType.value;
-      if (val === 'utilization' || val === 'estimated_students' || val === 'time_slot_utilization') {
-        buildingFilter.style.display = 'block';
-        timeFilter.style.display = 'block';
-      } else if (val === 'peak_hours') {
-        buildingFilter.style.display = 'block';
-        timeFilter.style.display = 'none';
-      } else {
-        buildingFilter.style.display = 'none';
-        timeFilter.style.display = 'none';
-      }
-    });
+    // reportType.addEventListener('change', () => {
+    //   const val = reportType.value;
+    //   if (val === 'utilization' || val === 'estimated_students' || val === 'time_slot_utilization') {
+    //     buildingFilter.style.display = 'block';
+    //     timeFilter.style.display = 'block';
+    //   } else if (val === 'peak_hours') {
+    //     buildingFilter.style.display = 'block';
+    //     timeFilter.style.display = 'none';
+    //   } else {
+    //     buildingFilter.style.display = 'none';
+    //     timeFilter.style.display = 'none';
+    //   }
+    // });
 
-    window.onload = function() {
-      fetch('/api/buildings')
-        .then(response => response.json())
-        .then(buildings => {
-          const buildingSelect = document.getElementById('building');
-          buildingSelect.innerHTML = ''; // Clear old options
-          buildings.forEach(building => {
-            const option = document.createElement('option');
-            option.value = building.building_id;
-            option.textContent = building.building_name;
-            buildingSelect.appendChild(option);
-          });
-        })
-        .catch(error => {
-          console.error('Error fetching buildings:', error);
+    // window.onload = function() {
+    //   fetch('/api/buildings')
+    //     .then(response => response.json())
+    //     .then(buildings => {
+    //       const buildingSelect = document.getElementById('building');
+    //       buildingSelect.innerHTML = ''; // Clear old options
+    //       buildings.forEach(building => {
+    //         const option = document.createElement('option');
+    //         option.value = building.building_id;
+    //         option.textContent = building.building_name;
+    //         buildingSelect.appendChild(option);
+    //       });
+    //     })
+    //     .catch(error => {
+    //       console.error('Error fetching buildings:', error);
+    //     });
+    // };
+      reportType.addEventListener('change', () => {
+    const val = reportType.value;
+    if (['utilization', 'estimated_students', 'time_slot_utilization', 'students_by_hour'].includes(val)) {
+      buildingFilter.style.display = 'block';
+    } else {
+      buildingFilter.style.display = 'none';
+    }
+  });
+
+  window.onload = function() {
+    fetch('/api/buildings')
+      .then(response => response.json())
+      .then(buildings => {
+        const buildingSelect = document.getElementById('building');
+        buildingSelect.innerHTML = ''; 
+        buildings.forEach(building => {
+          const option = document.createElement('option');
+          option.value = building.building_id;
+          option.textContent = building.building_name;
+          buildingSelect.appendChild(option);
         });
-    };
+      })
+      .catch(error => {
+        console.error('Error fetching buildings:', error);
+      });
+  };
 
 
 
@@ -304,98 +298,7 @@
       });
     }
 
-async function loadEstimatedStudentsChart() {
-  const day = document.getElementById('daySelect').value;
-  let start = document.getElementById('startTime').value;
-  let end = document.getElementById('endTime').value;
-  if (!start) start = '08:00';
-  if (!end) end = '22:00';
-
-  const res = await fetch(`/api/estimated_students_chart?day=${day}&start_time=${start}&end_time=${end}`);
-  const data = await res.json();
-
-  const labels = data.map(row => row.Building);
-  const values = data.map(row => row.EstimatedStudents);
-
-  if (window.studentsChartInstance) window.studentsChartInstance.destroy();
-  const ctx = document.getElementById('studentsChart').getContext('2d');
-  window.studentsChartInstance = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [{
-        label: 'Estimated Students',
-        data: values,
-        backgroundColor: '#60a5fa'
-      }]
-    },
-    options: {
-      responsive: true,
-      plugins: { legend: { display: false } },
-      scales: { y: { beginAtZero: true } }
-    }
-  });
-}
-
-
-
-  async function loadFilteredPeakChart() {
-    const day = document.getElementById('weekdaySelect').value;
-    const res = await fetch(`/api/peak_usage_filtered?weekday=${day}`);
-    const data = await res.json();
-
-    const labels = data.map(row => row.Hour + ":00");
-    const values = data.map(row => row.Count);
-
-    if (window.filteredPeakChartInstance) window.filteredPeakChartInstance.destroy();
-    const ctx = document.getElementById('filteredPeakChart').getContext('2d');
-    window.filteredPeakChartInstance = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [{
-          label: 'Number of Classes',
-          data: values,
-          backgroundColor: '#60a5fa'
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: {
-          title: {
-            display: true,
-            text: `Scheduled Classes by Hour on ${day}`
-          },
-          tooltip: {
-            callbacks: {
-              label: ctx => `${ctx.parsed.y} class(es) scheduled`
-            }
-          }
-        },
-        scales: {
-          y: {
-            beginAtZero: true,
-            title: {
-              display: true,
-              text: 'Number of Scheduled Classes'
-            }
-          },
-          x: {
-            title: {
-              display: true,
-              text: 'Hour of Day'
-            }
-          }
-        }
-      }
-    });
-  }
-
-
     fetchBuildings();
   </script>
 </body>
 </html>
-
-
-
