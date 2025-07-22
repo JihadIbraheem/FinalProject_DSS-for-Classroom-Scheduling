@@ -50,6 +50,27 @@ def get_connection():
 
 reports_bp = Blueprint('reports', __name__)
 
+@app.route('/api/classrooms_by_building')
+def get_classrooms_by_building():
+    building_name = request.args.get('building_name')
+    if not building_name:
+        return jsonify([])
+
+    try:
+        cursor = db.cursor(dictionary=True)
+        query = """
+            SELECT c.classroom_id, c.classroom_num, c.building_id
+            FROM classrooms c
+            JOIN buildings b ON c.building_id = b.building_id
+            WHERE b.building_name = %s
+        """
+        cursor.execute(query, (building_name,))
+        classrooms = cursor.fetchall()
+        return jsonify(classrooms)
+    except Exception as e:
+        print("Error:", e)
+        return jsonify([]), 500
+
 # API to fetch buildings list for frontend dropdown
 @app.route('/api/buildings', methods=['GET'])
 def fetch_buildings_for_dropdown():
