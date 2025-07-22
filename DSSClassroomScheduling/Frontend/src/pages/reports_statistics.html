@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Reports and Statistics - SmartCampus Scheduler</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Poppins', sans-serif; }
     body {
@@ -54,14 +55,52 @@
       gap: 2rem;
       flex-wrap: wrap;
     }
-    .report-card, .stats-card {
-      background: #ffffffee;
-      padding: 2rem;
-      border-radius: 1rem;
-      box-shadow: 0 10px 20px rgba(0,0,0,0.1);
-      flex: 1 1 500px;
-      max-width: 600px;
-    }
+.report-card, .stats-card {
+  background: linear-gradient(135deg, #ffffff, #f0f4ff);
+  padding: 2.5rem;
+  border-radius: 1.25rem;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.1);
+  flex: 1 1 500px;
+  max-width: 620px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.report-card:hover, .stats-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.15);
+}
+    .classroom-map {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 12px;
+  margin-top: 1rem;
+}
+
+.classroom {
+  padding: 12px;
+  font-weight: bold;
+  text-align: center;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  transition: transform 0.2s, box-shadow 0.2s;
+  font-size: 0.95rem;
+  cursor: default;
+}
+.classroom:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+}
+
+
+.sheltered {
+  background-color: #bbf7d0;
+  color: #065f46;
+}
+
+.not-sheltered {
+  background-color: #fecaca;
+  color: #991b1b;
+}
+
     h2 {
      color: #1E3A8A;
      margin-bottom: 1.5rem;
@@ -72,30 +111,41 @@
      letter-spacing: 1px;
      text-shadow: 1px 1px 3px rgba(0,0,0,0.3);
     }
-    label, select, input {
+    label{
       display: block;
       width: 100%;
       margin-bottom: 1rem;
     }
     select, input[type="time"] {
-      padding: 0.5rem;
-      border-radius: 0.5rem;
-      border: 1px solid #ccc;
-    }
-    .btn {
-      background: #1E3A8A;
-      color: white;
-      padding: 0.75rem 1.25rem;
-      border-radius: 0.5rem;
-      font-weight: 600;
-      transition: 0.2s;
-      cursor: pointer;
-      text-align: center;
-    }
-    .btn:hover {
-      background: #2563EB;
-      transform: translateY(-2px);
-    }
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid #cbd5e1;
+  font-size: 1rem;
+  background-color: #f9fafb;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+select:focus, input[type="time"]:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.3);
+}
+
+.btn {
+  background: linear-gradient(to right, #1E3A8A, #3B82F6);
+  color: white;
+  padding: 0.8rem 1.5rem;
+  border-radius: 0.75rem;
+  font-weight: 600;
+  font-size: 1rem;
+  border: none;
+  transition: background 0.3s ease, transform 0.2s;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+.btn:hover {
+  background: linear-gradient(to right, #1E40AF, #2563EB);
+  transform: translateY(-2px);
+}
+
     .filters { display: none; }
     .btn-group { display: flex; gap: 1rem; justify-content: center; }
     footer {
@@ -135,62 +185,110 @@
 </header>
 
 <main>
-  <div class="report-card">
-    <h2>Generate Reports</h2>
-    <form method="POST" action="/generate_report">
-      <label for="reportType">Select Report Type:</label>
-      <select name="report_type" id="reportType" required>
+
+<!-- Generate Reports Card -->
+<div class="report-card" style="background:#ffffff; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,0.05); padding:2rem; max-width:700px; margin:auto;">
+  <h2 style="text-align:center; font-size:1.9rem; color:#1E3A8A; margin-bottom:2rem; text-shadow:1px 1px 2px rgba(0,0,0,0.1);">
+    <i class="fas fa-file-alt" style="margin-right:0.5rem;"></i> Generate Reports
+  </h2>
+  <form method="POST" action="/generate_report" style="display:flex; flex-direction:column; gap:2rem;">
+    <div style="border-left: 5px solid #1E3A8A; padding-left: 1rem;">
+      <label for="reportType" style="font-weight:700; font-size:1.05rem;">Select Report Type:</label>
+      <select name="report_type" id="reportType" required style="width:100%; padding:0.8rem; margin-top:0.5rem; border-radius:10px; border:1px solid #cbd5e1; background:#f9fafb;">
         <option value="">-- Select Report --</option>
         <option value="utilization">Classroom Utilization</option>
         <option value="estimated_students">Estimated Student Numbers</option>
         <option value="history">Changes & Rescheduling History</option>
         <option value="students_by_hour">Students per Classroom by Hour</option>
+        <option value="lecturer_utilization">Lecturer Utilization Report</option>
       </select>
+    </div>
+    <div id="buildingFilter" style="border-left: 5px solid #64748B; padding-left: 1rem;">
+      <label for="building" style="font-weight:700; font-size:1.05rem;">Select Building:</label>
+      <select name="building_id" id="building" style="width:100%; padding:0.8rem; margin-top:0.5rem; border-radius:10px; border:1px solid #cbd5e1; background:#f9fafb;"></select>
+    </div>
+    <div class="btn-group" style="text-align:center; margin-top:1rem;">
+      <button type="submit" class="btn" style="padding:0.85rem 1.75rem; font-size:1rem; font-weight:600; background:#1E3A8A; color:#fff; border:none; border-radius:12px; cursor:pointer; transition: background 0.3s;">
+        Generate Report (Excel)
+      </button>
+    </div>
+  </form>
+</div>
 
-      <div id="buildingFilter" class="filters">
-        <label for="building">Select Building:</label>
-        <select name="building_id" id="building"></select>
+<!-- Daily Student Count Card -->
+<div class="stats-card">
+  <h2 style="text-align:center; font-size: 1.9rem; color: #1E3A8A; margin-bottom: 1.5rem; text-shadow: 1px 1px 2px rgba(0,0,0,0.1);">
+    <i class="fas fa-users"></i> Daily Student Count
+  </h2>
+  <section class="chart-box" style="padding: 2rem 2.5rem; border-radius: 1.25rem; background: #ffffff; box-shadow: 0 6px 16px rgba(0,0,0,0.08); display: flex; flex-direction: column; align-items: center; gap: 2rem;">
+    <h3 style="font-size: 1.6rem; font-weight: 600; color: #1E3A8A; text-align: center; margin-bottom: 0;">Total Students per Day</h3>
+    <canvas id="dailyStudentChart" width="500" height="300"></canvas>
+  </section>
+  <section class="chart-box" style="padding: 2rem 2.5rem; border-radius: 1.25rem; background: #ffffff; box-shadow: 0 6px 16px rgba(0,0,0,0.08); display: flex; flex-direction: column; align-items: center; gap: 1.5rem;">
+    <h3 style="font-size: 1.6rem; font-weight: 600; color: #1E3A8A; text-align: center;">Hourly Student Load</h3>
+    <div style="width: 100%; max-width: 300px; text-align: center;">
+      <label for="hourlyDaySelect" style="display:block; margin-bottom: 0.5rem; font-weight: 600;">Select Day of Week:</label>
+      <select id="hourlyDaySelect" style="width: 100%; padding: 0.7rem 1rem; border-radius: 0.75rem; border: 1px solid #ccc; font-size: 1rem; background: #f9fafb;">
+        <option value="א'">א'</option>
+        <option value="ב'">ב'</option>
+        <option value="ג'">ג'</option>
+        <option value="ד'">ד'</option>
+        <option value="ה'">ה'</option>
+        <option value="ו'">ו'</option>
+      </select>
+    </div>
+    <canvas id="hourlyStudentChart" width="500" height="300"></canvas>
+  </section>
+  <p style="font-size: 0.9rem; color: #6b7280; margin-top: 0.5rem; text-align:center;">
+    Note: Students may appear in multiple time slots if they attend multiple courses.
+  </p>
+</div>
+
+<!-- Sheltered Classroom Analysis Card -->
+<div class="stats-card">
+  <h2 style="text-align:center; font-size: 1.9rem; color: #1E3A8A; margin-bottom: 1.5rem; text-shadow: 1px 1px 2px rgba(0,0,0,0.1);">
+    <i class="fas fa-shield-alt"></i> Sheltered Classroom Analysis
+  </h2>
+  <section class="chart-box" style="padding: 2rem 2.5rem; border-radius: 1.25rem; background: #ffffff; box-shadow: 0 6px 16px rgba(0,0,0,0.08); display: flex; flex-direction: column; align-items: center; gap: 2rem;">
+    <h3 style="font-size: 1.6rem; font-weight: 600; color: #1E3A8A; text-align: center; margin-bottom: 0;">Shelter Status by Building</h3>
+    <div style="width: 100%; max-width: 400px; text-align: center;">
+      <label for="buildingSelect" style="display:block; margin-bottom: 0.5rem; font-weight: 600;">Select Building:</label>
+      <select id="buildingSelect" style="width: 100%; padding: 0.7rem 1rem; border-radius: 0.75rem; border: 1px solid #ccc; font-size: 1rem; background: #f9fafb;"></select>
+    </div>
+    <div id="classroomMap" class="classroom-map" style="width: 100%; margin-top: 0;"></div>
+    <div class="legend-container" style="display: flex; justify-content: center; gap: 2rem; background-color: #f1f5f9; padding: 0.75rem 2rem; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); width: 100%; max-width: 500px;">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <span style="width: 20px; height: 20px; border-radius: 4px; background-color: #bbf7d0;"></span>
+        <span style="font-weight: 500; font-size: 1rem; color: #065f46;">Sheltered</span>
       </div>
-
-      <div id="timeFilter" class="filters">
-        <label for="day">Day of the Week:</label>
-        <select name="day" id="day">
-          <option value="א'">א'</option>
-          <option value="ב'">ב'</option>
-          <option value="ג'">ג'</option>
-          <option value="ד'">ד'</option>
-          <option value="ה'">ה'</option>
-          <option value="ו'">ו'</option>
-        </select>
-
-        <label for="startTime">Start Time:</label>
-        <input type="time" name="start_time" id="startTime"/>
-
-        <label for="endTime">End Time:</label>
-        <input type="time" name="end_time" id="endTime"/>
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <span style="width: 20px; height: 20px; border-radius: 4px; background-color: #fecaca;"></span>
+        <span style="font-weight: 500; font-size: 1rem; color: #991b1b;">Not Sheltered</span>
       </div>
+    </div>
+  </section>
+  <section class="chart-box" style="padding: 2rem 2.5rem; border-radius: 1.25rem; background: #ffffff; box-shadow: 0 6px 16px rgba(0,0,0,0.08); display: flex; flex-direction: column; align-items: center; gap: 2rem;">
+    <h3 style="font-size: 1.6rem; font-weight: 600; color: #1E3A8A; text-align: center; margin-bottom: 0;">Average Students by Shelter Status</h3>
+    <div style="width: 100%; max-width: 300px; text-align: center;">
+      <label for="daySelect" style="display:block; margin-bottom: 0.5rem; font-weight: 600;">Select Day of Week:</label>
+      <select id="daySelect" style="width: 100%; padding: 0.7rem 1rem; border-radius: 0.75rem; border: 1px solid #ccc; font-size: 1rem; background: #f9fafb;">
+        <option value="א'">א'</option>
+        <option value="ב'">ב'</option>
+        <option value="ג'">ג'</option>
+        <option value="ד'">ד'</option>
+        <option value="ה'">ה'</option>
+        <option value="ו'">ו'</option>
+      </select>
+    </div>
+    <canvas id="shelterStudentChart" width="500" height="300"></canvas>
+    <div id="studentStatsSummary" style="text-align:center; font-size: 1rem; margin-top: 1rem;">
+      <p><strong>Total Students in Sheltered Classrooms:</strong> <span id="shelteredTotal">-</span></p>
+      <p><strong>Total Students in Non-Sheltered Classrooms:</strong> <span id="notShelteredTotal">-</span></p>
+      <p style="font-size: 0.9rem; color: #6b7280; margin-top: 0.5rem;">Note: A student may be counted more than once if enrolled in multiple courses during the day.</p>
+    </div>
+  </section>
+</div>
 
-      <div class="btn-group">
-        <button type="submit" class="btn">Generate Report (Excel)</button>
-      </div>
-    </form>
-  </div>
-
-  <div class="stats-card">
-    <h2>Analitical Visualizations</h2>
-    <section class="chart-box">
-      <h3>1. Classroom Shelter Status (By Building)</h3>
-      <label for="buildingSelect">Select Building:</label>
-      <select id="buildingSelect"></select>
-      <div id="classroomMap" class="classroom-map"></div>
-      <div class="legend">
-        <span style="background-color:#bbf7d0"></span> Sheltered
-        <span style="background-color:#fecaca"></span> Not Sheltered
-      </div>
-    </section>
-
-
-  </div>
 </main>
 
 <footer>
@@ -235,32 +333,44 @@
     //       console.error('Error fetching buildings:', error);
     //     });
     // };
-      reportType.addEventListener('change', () => {
-    const val = reportType.value;
-    if (['utilization', 'estimated_students', 'time_slot_utilization', 'students_by_hour'].includes(val)) {
-      buildingFilter.style.display = 'block';
-    } else {
-      buildingFilter.style.display = 'none';
-    }
-  });
+reportType.addEventListener('change', () => {
+  const val = reportType.value;
+  
+  // הצגת Select Building רק אם הערך הוא אחד מאלה:
+  if (['utilization', 'students_by_hour', 'history'].includes(val)) {
+    buildingFilter.style.display = 'block';
+  } else {
+    buildingFilter.style.display = 'none';
+  }
+});
 
-  window.onload = function() {
-    fetch('/api/buildings')
-      .then(response => response.json())
-      .then(buildings => {
-        const buildingSelect = document.getElementById('building');
-        buildingSelect.innerHTML = ''; 
-        buildings.forEach(building => {
-          const option = document.createElement('option');
-          option.value = building.building_id;
-          option.textContent = building.building_name;
-          buildingSelect.appendChild(option);
-        });
-      })
-      .catch(error => {
-        console.error('Error fetching buildings:', error);
+
+  window.onload = function () {
+  fetch('/api/buildings')
+    .then(response => response.json())
+    .then(buildings => {
+      const buildingSelect = document.getElementById('building');
+      buildingSelect.innerHTML = '';
+
+      // ✅ הוספת האפשרות "All Buildings"
+      const optionAll = document.createElement('option');
+      optionAll.value = 'all';
+      optionAll.textContent = 'All Buildings';
+      buildingSelect.appendChild(optionAll);
+
+      // הוספת שאר הבניינים מהרשימה
+      buildings.forEach(building => {
+        const option = document.createElement('option');
+        option.value = building.building_id;
+        option.textContent = building.building_name;
+        buildingSelect.appendChild(option);
       });
-  };
+    })
+    .catch(error => {
+      console.error('Error fetching buildings:', error);
+    });
+};
+
 
 
 
@@ -281,6 +391,159 @@
       loadShelterChart();
     }
 
+  async function loadDailyStudentChart() {
+  const res = await fetch('/api/students_per_day');
+  const data = await res.json();
+
+  const days = ["א'", "ב'", "ג'", "ד'", "ה'", "ו'"];
+  const values = days.map(d => data[d] || 0);
+
+  const ctx = document.getElementById('dailyStudentChart').getContext('2d');
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: days,
+      datasets: [{
+        label: 'Total Students',
+        data: values,
+        backgroundColor: '#a5b4fc',
+        borderRadius: 10
+      }]
+    },
+    options: {
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y} students`
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: { display: true, text: 'Number of Students' }
+        }
+      }
+    }
+  });
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  loadDailyStudentChart();
+  document.getElementById('hourlyDaySelect').value = "א'";
+  loadHourlyStudentChart();
+
+});
+
+
+document.getElementById('hourlyDaySelect').addEventListener('change', loadHourlyStudentChart);
+
+async function loadHourlyStudentChart() {
+  const day = document.getElementById('hourlyDaySelect').value;
+  const res = await fetch(`/api/hourly_students_by_day?day=${encodeURIComponent(day)}`);
+  const data = await res.json();
+
+  const ctx = document.getElementById('hourlyStudentChart').getContext('2d');
+
+  if (window.hourlyChartInstance) {
+    window.hourlyChartInstance.destroy();
+  }
+
+  window.hourlyChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: Object.keys(data),
+      datasets: [{
+        label: 'Total Students',
+        data: Object.values(data),
+        borderColor: '#2563eb',
+        backgroundColor: 'rgba(37,99,235,0.2)',
+        tension: 0.3,
+        pointRadius: 5,
+        pointHoverRadius: 7
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y} students`
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: { display: true, text: 'Number of Students' }
+        },
+        x: {
+          title: { display: true, text: 'Hour' }
+        }
+      }
+    }
+  });
+}
+
+
+  async function loadShelterStudentChart() {
+  const day = document.getElementById('daySelect').value;
+  if (!day) return;
+
+  const res = await fetch(`/api/average_students_by_shelter_status?day=${encodeURIComponent(day)}`);
+  const data = await res.json();
+
+  const ctx = document.getElementById('shelterStudentChart').getContext('2d');
+
+  // עדכון הגרף
+  if (window.shelterChartInstance) {
+    window.shelterChartInstance.destroy();
+  }
+
+  window.shelterChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ['Sheltered', 'Not Sheltered'],
+      datasets: [{
+        label: 'Average Students',
+        data: [data.sheltered_avg, data.not_sheltered_avg],
+        backgroundColor: ['#bbf7d0', '#fecaca'],
+        borderRadius: 8,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)} students`
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: 'Average Students'
+          }
+        }
+      }
+    }
+  });
+
+  // ✅ עדכון המספרים בתחתית
+  document.getElementById('shelteredTotal').textContent = data.sheltered_total || 0;
+  document.getElementById('notShelteredTotal').textContent = data.not_sheltered_total || 0;
+}
+
+
+  document.getElementById('daySelect').addEventListener('change', loadShelterStudentChart);
+  window.addEventListener('DOMContentLoaded', loadShelterStudentChart);
+
     document.getElementById('buildingSelect').addEventListener('change', loadShelterChart);
 
     async function loadShelterChart() {
@@ -293,7 +556,7 @@
       data.forEach(room => {
         const div = document.createElement('div');
         div.className = `classroom ${room.Sheltered === "1" ? 'sheltered' : 'not-sheltered'}`;
-        div.textContent = room.Classroom;
+        div.textContent = room.Classroom.slice(-3);
         container.appendChild(div);
       });
     }

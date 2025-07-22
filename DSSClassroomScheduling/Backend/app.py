@@ -19,6 +19,8 @@ from datetime import date,  timedelta
 import re 
 import json
 from flask import session
+import traceback
+
 
 
 
@@ -71,6 +73,122 @@ def get_classrooms_by_building():
         print("Error:", e)
         return jsonify([]), 500
 
+@app.route('/api/average_students_by_shelter_status')
+def average_students_by_shelter_status():
+    try:
+        day = request.args.get('day')
+
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        cursor.execute("""
+            SELECT
+                c.is_sheltered,
+                AVG(co.students_num) AS avg_students,
+                SUM(co.students_num) AS total_students
+            FROM schedules s
+            JOIN classrooms c ON s.classroom_id = c.classroom_id
+            JOIN courses co ON s.course_id = co.course_id
+            WHERE s.weekday = %s AND co.students_num IS NOT NULL
+            GROUP BY c.is_sheltered
+        """, (day,))
+        results = cursor.fetchall()
+        conn.close()
+
+        sheltered_avg = 0
+        not_sheltered_avg = 0
+        sheltered_total = 0
+        not_sheltered_total = 0
+
+        for row in results:
+            if int(row['is_sheltered']) == 1:
+                sheltered_avg = row['avg_students']
+                sheltered_total = row['total_students']
+            else:
+                not_sheltered_avg = row['avg_students']
+                not_sheltered_total = row['total_students']
+
+        return jsonify({
+            'sheltered_avg': round(sheltered_avg or 0, 1),
+            'not_sheltered_avg': round(not_sheltered_avg or 0, 1),
+            'sheltered_total': sheltered_total or 0,
+            'not_sheltered_total': not_sheltered_total or 0
+        })
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/students_per_day')
+def students_per_day():
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT s.weekday, SUM(co.students_num) AS total_students
+            FROM schedules s
+            JOIN courses co ON s.course_id = co.course_id
+            WHERE co.students_num IS NOT NULL
+            GROUP BY s.weekday
+        """)
+        results = cursor.fetchall()
+        conn.close()
+
+        # סדר ימי השבוע לפי סדר עברי רגיל
+        days_order = ["א'", "ב'", "ג'", "ד'", "ה'", "ו'"]
+        day_names = {d: 0 for d in days_order}
+
+        for row in results:
+            day = row['weekday']
+            if day in day_names:
+                day_names[day] = int(row['total_students'])
+
+        return jsonify(day_names)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/hourly_students_by_day')
+def hourly_students_by_day():
+    try:
+        day = request.args.get('day')
+        if not day:
+            return jsonify({'error': 'Missing day parameter'}), 400
+
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        # נשלוף את כל השיעורים ליום שנבחר כולל שעת התחלה וסיום ומספר סטודנטים
+        cursor.execute("""
+            SELECT
+                TIME_FORMAT(s.time_start, '%H') AS hour,
+                co.students_num
+            FROM schedules s
+            JOIN courses co ON s.course_id = co.course_id
+            WHERE s.weekday = %s
+              AND co.students_num IS NOT NULL
+        """, (day,))
+        rows = cursor.fetchall()
+        conn.close()
+
+        # הכנה של מילון שעות מ-08 עד 20 (או לפי מה שמתאים למוסד)
+        hourly_counts = {str(h).zfill(2): 0 for h in range(8, 21)}
+
+        # נחשב כמה סטודנטים יש בכל שעה – נניח ששיעור נחשב לפי שעת התחלתו בלבד
+        for row in rows:
+            hour = row['hour']
+            if hour in hourly_counts:
+                hourly_counts[hour] += row['students_num']
+
+        return jsonify(hourly_counts)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
 # API to fetch buildings list for frontend dropdown
 @app.route('/api/buildings', methods=['GET'])
 def fetch_buildings_for_dropdown():
@@ -97,42 +215,77 @@ def generate_report():
     output = io.BytesIO()
 
     if report_type == 'utilization':
-        cursor.execute("SELECT COUNT(*) AS total FROM classrooms")
+        building_filter = ''
+        filter_value = ()
+        if building_id and building_id != 'all':
+            building_filter = 'WHERE c.building_id = %s'
+            filter_value = (building_id,)
+
+        cursor.execute("""
+            SELECT COUNT(*) AS total
+            FROM classrooms c
+            JOIN buildings b ON c.building_id = b.building_id
+            {}""".format(building_filter), filter_value)
         total = cursor.fetchone()['total']
 
-        cursor.execute("SELECT COUNT(DISTINCT classroom_id) AS used FROM schedules")
+        cursor.execute("""
+            SELECT COUNT(DISTINCT c.classroom_id) AS used
+            FROM schedules s
+            JOIN classrooms c ON s.classroom_id = c.classroom_id
+            JOIN buildings b ON c.building_id = b.building_id
+            {}""".format(building_filter), filter_value)
         used = cursor.fetchone()['used']
 
         cursor.execute("""
             SELECT AVG(cnt) as avg_daily FROM (
-                SELECT COUNT(*) as cnt FROM schedules GROUP BY weekday
+                SELECT COUNT(*) as cnt
+                FROM schedules s
+                JOIN classrooms c ON s.classroom_id = c.classroom_id
+                JOIN buildings b ON c.building_id = b.building_id
+                {}
+                GROUP BY s.weekday
             ) sub
-        """)
-        avg_daily = round(cursor.fetchone()['avg_daily'], 2)
+        """.format(building_filter), filter_value)
+        row = cursor.fetchone()
+        avg_daily = round(row['avg_daily'], 2) if row and row['avg_daily'] is not None else 0
+
 
         cursor.execute("""
-            SELECT HOUR(time_start) AS hour, COUNT(*) AS cnt
-            FROM schedules
+            SELECT HOUR(s.time_start) AS hour, COUNT(*) AS cnt
+            FROM schedules s
+            JOIN classrooms c ON s.classroom_id = c.classroom_id
+            JOIN buildings b ON c.building_id = b.building_id
+            {}
             GROUP BY hour
             ORDER BY cnt DESC LIMIT 1
-        """)
-        peak_hour = f"{cursor.fetchone()['hour']}:00"
+        """.format(building_filter), filter_value)
+        row = cursor.fetchone()
+        peak_hour = f"{row['hour']}:00" if row and row['hour'] is not None else 'N/A'
+
 
         cursor.execute("""
-            SELECT COUNT(*) AS underutilized FROM classrooms
-            WHERE classroom_id NOT IN (SELECT DISTINCT classroom_id FROM schedules)
-        """)
+            SELECT COUNT(*) AS underutilized
+            FROM classrooms c
+            LEFT JOIN schedules s ON s.classroom_id = c.classroom_id
+            JOIN buildings b ON c.building_id = b.building_id
+            WHERE s.classroom_id IS NULL {}
+        """.format(f"AND c.building_id = %s" if building_id != 'all' else ''), filter_value)
         underutilized = cursor.fetchone()['underutilized']
+
+        total_available_hours = total * 10 * 6
+        total_used_hours = used * avg_daily
+        overall_utilization_rate = (total_used_hours / total_available_hours) * 100 if total_available_hours else 0
 
         summary_df = pd.DataFrame([{
             "Total Classrooms": total,
             "Utilized Classrooms": used,
             "Average Daily Usage Rate": avg_daily,
             "Peak Usage Hour": peak_hour,
-            "Underutilized Classrooms": underutilized
+            "Underutilized Classrooms": underutilized,
+            "Overall Utilization Rate (%)": round(overall_utilization_rate, 2)
         }])
 
-        building_df = pd.read_sql("""
+        building_query = """
             SELECT 
                 b.building_name,
                 COUNT(DISTINCT c.classroom_id) AS `# Classrooms`,
@@ -150,48 +303,138 @@ def generate_report():
             FROM buildings b
             JOIN classrooms c ON c.building_id = b.building_id
             LEFT JOIN schedules s ON s.classroom_id = c.classroom_id
-            GROUP BY b.building_id
-        """, conn)
+        """
 
+        if building_id != 'all':
+            building_query += " WHERE b.building_id = %s"
+            building_query += " GROUP BY b.building_id"
+            building_df = pd.read_sql(building_query, conn, params=(building_id,))
+        else:
+            building_query += " GROUP BY b.building_id"
+            building_df = pd.read_sql(building_query, conn)
 
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            summary_df.to_excel(writer, sheet_name='Summary', index=False)
-            building_df.to_excel(writer, sheet_name='Building Breakdown', index=False)
+            summary_df.to_excel(writer, sheet_name='Campus Summary', index=False)
+            building_df.to_excel(writer, sheet_name='Utilization by Building', index=False)
+
+            workbook = writer.book
+            summary_sheet = writer.sheets['Campus Summary']
+            red_format = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
+            green_format = workbook.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'})
+
+            summary_sheet.conditional_format('F2', {
+                'type': 'cell', 'criteria': '<', 'value': 30, 'format': red_format
+            })
+            summary_sheet.conditional_format('F2', {
+                'type': 'cell', 'criteria': '>=', 'value': 70, 'format': green_format
+            })
 
     elif report_type == 'estimated_students':
         df = pd.read_sql("""
-    SELECT 
-        b.building_name AS `Building Name`,
-        SUM(c2.students_num) AS `Estimated Students`,
-        ROUND(AVG(c2.students_num), 2) AS `Average per Room`,
-        pd.peak_day AS `Peak Day`
-    FROM buildings b
-    JOIN classrooms c ON c.building_id = b.building_id
-    JOIN schedules s ON s.classroom_id = c.classroom_id
-    JOIN courses c2 ON s.course_id = c2.course_id
-    LEFT JOIN (
-        SELECT building_id, weekday AS peak_day
-        FROM (
-            SELECT c.building_id, s.weekday,
-                   ROW_NUMBER() OVER (PARTITION BY c.building_id ORDER BY COUNT(*) DESC) as rn
-            FROM classrooms c
+            SELECT 
+                b.building_name AS `Building Name`,
+                SUM(c2.students_num) AS `Estimated Students`,
+                ROUND(AVG(c2.students_num), 2) AS `Average per Room`,
+                pd.peak_day AS `Peak Day`
+            FROM buildings b
+            JOIN classrooms c ON c.building_id = b.building_id
             JOIN schedules s ON s.classroom_id = c.classroom_id
-            GROUP BY c.building_id, s.weekday
-        ) sub
-        WHERE rn = 1
-    ) pd ON pd.building_id = b.building_id
-    GROUP BY b.building_id, pd.peak_day
-""", conn)
+            JOIN courses c2 ON s.course_id = c2.course_id
+            LEFT JOIN (
+                SELECT building_id, weekday AS peak_day
+                FROM (
+                    SELECT c.building_id, s.weekday,
+                           ROW_NUMBER() OVER (PARTITION BY c.building_id ORDER BY COUNT(*) DESC) as rn
+                    FROM classrooms c
+                    JOIN schedules s ON s.classroom_id = c.classroom_id
+                    GROUP BY c.building_id, s.weekday
+                ) sub
+                WHERE rn = 1
+            ) pd ON pd.building_id = b.building_id
+            GROUP BY b.building_id, pd.peak_day
+        """, conn)
+
+        day_map = {
+    'א': 'Sunday', 'ב': 'Monday', 'ג': 'Tuesday',
+    'ד': 'Wednesday', 'ה': 'Thursday', 'ו': 'Friday', 'ש': 'Saturday',
+    '0': 'Sunday', '1': 'Monday', '2': 'Tuesday',
+    '3': 'Wednesday', '4': 'Thursday', '5': 'Friday', '6': 'Saturday'
+    }
+        df['Peak Day'] = df['Peak Day'].astype(str).str.strip().map(day_map).fillna(df['Peak Day'])
 
 
-        df.to_excel(output, index=False)
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, sheet_name='Estimated Students Summary', index=False)
+
+            workbook = writer.book
+            worksheet = writer.sheets['Estimated Students Summary']
+
+            red = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
+            yellow = workbook.add_format({'bg_color': '#FFEB9C', 'font_color': '#9C6500'})
+            green = workbook.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'})
+
+            worksheet.conditional_format('B2:B100', {'type': 'cell', 'criteria': '<', 'value': 300, 'format': red})
+            worksheet.conditional_format('B2:B100', {'type': 'cell', 'criteria': 'between', 'minimum': 300, 'maximum': 1000, 'format': yellow})
+            worksheet.conditional_format('B2:B100', {'type': 'cell', 'criteria': '>', 'value': 1000, 'format': green})
+
+            chart = workbook.add_chart({'type': 'column'})
+            chart.add_series({
+                'name': 'Estimated Students',
+                'categories': ['Estimated Students Summary', 1, 0, len(df), 0],
+                'values':     ['Estimated Students Summary', 1, 1, len(df), 1],
+            })
+            chart.set_title({'name': 'Estimated Students per Building'})
+            chart.set_x_axis({'name': 'Building'})
+            chart.set_y_axis({'name': 'Students'})
+            worksheet.insert_chart('F2', chart)
 
     elif report_type == 'history':
-        df = pd.read_sql("SELECT * FROM schedule_history", conn)
-        df.to_excel(output, index=False)
+        if building_id and building_id != 'all':
+            df = pd.read_sql("""
+                SELECT 
+                    sh.course_id,
+                    CONCAT(RIGHT(co_old.classroom_num, 3), ' - ', b_old.building_name) AS old_classroom,
+                    CONCAT(RIGHT(co_new.classroom_num, 3), ' - ', b_new.building_name) AS new_classroom,
+                    sh.old_weekday,
+                    sh.new_weekday,
+                    TIME_FORMAT(sh.old_time_start, '%H:%i') AS old_time_start,
+                    TIME_FORMAT(sh.old_time_end, '%H:%i') AS old_time_end,
+                    TIME_FORMAT(sh.new_time_start, '%H:%i') AS new_time_start,
+                    TIME_FORMAT(sh.new_time_end, '%H:%i') AS new_time_end,
+                    u.first_name AS updated_by
+                FROM schedule_history sh
+                LEFT JOIN classrooms co_old ON sh.old_classroom_id = co_old.classroom_id
+                LEFT JOIN buildings b_old ON co_old.building_id = b_old.building_id
+                LEFT JOIN classrooms co_new ON sh.new_classroom_id = co_new.classroom_id
+                LEFT JOIN buildings b_new ON co_new.building_id = b_new.building_id
+                LEFT JOIN users u ON sh.updated_by_user_id = u.user_id
+                WHERE b_old.building_id = %s OR b_new.building_id = %s
+            """, conn, params=(building_id, building_id))
+        else:
+            df = pd.read_sql("""
+                SELECT 
+                    sh.course_id,
+                    CONCAT(RIGHT(co_old.classroom_num, 3), ' - ', b_old.building_name) AS old_classroom,
+                    CONCAT(RIGHT(co_new.classroom_num, 3), ' - ', b_new.building_name) AS new_classroom,
+                    sh.old_weekday,
+                    sh.new_weekday,
+                    TIME_FORMAT(sh.old_time_start, '%H:%i') AS old_time_start,
+                    TIME_FORMAT(sh.old_time_end, '%H:%i') AS old_time_end,
+                    TIME_FORMAT(sh.new_time_start, '%H:%i') AS new_time_start,
+                    TIME_FORMAT(sh.new_time_end, '%H:%i') AS new_time_end,
+                    u.first_name AS updated_by
+                FROM schedule_history sh
+                LEFT JOIN classrooms co_old ON sh.old_classroom_id = co_old.classroom_id
+                LEFT JOIN buildings b_old ON co_old.building_id = b_old.building_id
+                LEFT JOIN classrooms co_new ON sh.new_classroom_id = co_new.classroom_id
+                LEFT JOIN buildings b_new ON co_new.building_id = b_new.building_id
+                LEFT JOIN users u ON sh.updated_by_user_id = u.user_id
+            """, conn)
+
+        df.to_excel(output, index=False, sheet_name="Changes & Rescheduling History")
 
     elif report_type == 'students_by_hour':
-        df = pd.read_sql("""
+        query = """
             SELECT 
                 b.building_name,
                 c.classroom_num,
@@ -204,19 +447,22 @@ def generate_report():
             JOIN classrooms c ON s.classroom_id = c.classroom_id
             JOIN buildings b ON c.building_id = b.building_id
             JOIN courses co ON s.course_id = co.course_id
-            WHERE b.building_id = %s
-        """, conn, params=(building_id,))
+        """
+        params = ()
+
+        if building_id and building_id.lower() != 'all':
+            query += " WHERE b.building_id = %s"
+            params = (building_id,)
+
+        df = pd.read_sql(query, conn, params=params)
 
         if df.empty:
             return "No data found for this building", 404
 
-
-        # Extract hour ranges
         df['start_hour'] = df['time_start'].dt.components['hours']
         df['end_hour'] = df['time_end'].dt.components['hours']
         df['hour_range'] = df.apply(lambda row: list(range(row['start_hour'], row['end_hour'])), axis=1)
 
-        # Expand each row by hour
         expanded_rows = []
         for _, row in df.iterrows():
             for h in row['hour_range']:
@@ -231,7 +477,6 @@ def generate_report():
 
         result_df = pd.DataFrame(expanded_rows)
 
-        # Group and cap student counts to classroom capacity
         grouped = result_df.groupby(
             ['Classroom', 'Building', 'Capacity', 'Weekday', 'Hour']
         )['Students'].sum().reset_index()
@@ -241,7 +486,7 @@ def generate_report():
             axis=1
         )
 
-        # Pivot: Hours become columns
+        # יצירת Pivot לפי שעות
         pivot = grouped.pivot_table(
             index=['Classroom', 'Building', 'Capacity', 'Weekday'],
             columns='Hour',
@@ -249,14 +494,98 @@ def generate_report():
             aggfunc='sum',
             fill_value=0
         )
-
         pivot.reset_index(inplace=True)
 
-        # Export to Excel
+        # חישוב ממוצע ניצול ואחוזים
+        pivot['Avg. Hourly Utilization (%)'] = pivot.apply(
+            lambda row: round(
+                sum([v for k, v in row.items() if isinstance(k, str) and ':' in k]) / (row['Capacity'] * len([k for k in row.keys() if isinstance(k, str) and ':' in k])) * 100
+                if row['Capacity'] > 0 else 0, 2
+            ),
+            axis=1
+        )
+
+        # חישוב שעת שיא (Peak Hour)
+        def get_peak_hour(row):
+            hourly = {k: v for k, v in row.items() if isinstance(k, str) and ':' in k}
+            return max(hourly, key=hourly.get) if hourly else 'N/A'
+
+        pivot['Peak Hour'] = pivot.apply(get_peak_hour, axis=1)
+
+        # גיליון summary
+        summary_df = pd.DataFrame([{
+            'Most Utilized Hour (Campus)': grouped.groupby('Hour')['Students'].sum().idxmax(),
+            'Avg. Utilization Across Campus (%)': round(
+                grouped['Students'].sum() / grouped['Capacity'].sum() * 100, 2
+            ) if grouped['Capacity'].sum() > 0 else 0,
+            'Most Utilized Classroom': grouped.groupby('Classroom')['Students'].sum().idxmax()
+        }])
+
         output = BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            pivot.to_excel(writer, index=False, sheet_name='Report')
-    
+            pivot.to_excel(writer, index=False, sheet_name='Students by Hour')
+            summary_df.to_excel(writer, index=False, sheet_name='Summary')
+
+            workbook = writer.book
+            sheet = writer.sheets['Students by Hour']
+
+            # עיצוב מותנה לפי אחוז ניצול
+            green = workbook.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'})
+            yellow = workbook.add_format({'bg_color': '#FFEB9C', 'font_color': '#9C6500'})
+            red = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
+
+            sheet.conditional_format('Z2:Z1000', {
+                'type': 'cell', 'criteria': '>=', 'value': 70, 'format': green
+            })
+            sheet.conditional_format('Z2:Z1000', {
+                'type': 'cell', 'criteria': 'between', 'minimum': 30, 'maximum': 69, 'format': yellow
+            })
+            sheet.conditional_format('Z2:Z1000', {
+                'type': 'cell', 'criteria': '<', 'value': 30, 'format': red
+            })
+
+    elif report_type == 'lecturer_utilization':
+        df = pd.read_sql("""
+            SELECT 
+                co.lecturer_name AS `Lecturer`,
+                COUNT(*) AS `Number of Lessons`,
+                COUNT(DISTINCT s.weekday) AS `Days Teaching`,
+                COUNT(DISTINCT s.time_start) AS `Unique Start Times`
+            FROM schedules s
+            JOIN courses co ON s.course_id = co.course_id
+            GROUP BY co.lecturer_name
+            ORDER BY `Number of Lessons` DESC
+        """, conn)
+
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Lecturer Utilization')
+
+            workbook = writer.book
+            worksheet = writer.sheets['Lecturer Utilization']
+
+            # הגרף - Top 10 עם תוויות
+            chart = workbook.add_chart({'type': 'column'})
+
+            chart.add_series({
+                'name': 'Number of Lessons',
+                'categories': ['Lecturer Utilization', 1, 0, 10, 0],  # שמות המרצים
+                'values':     ['Lecturer Utilization', 1, 1, 10, 1],  # מספר שיעורים
+                'data_labels': {'value': True},  # תוויות ערכים
+            })
+
+            chart.set_title({'name': 'מספר שיעורים – 10 מרצים ראשונים'})
+            chart.set_x_axis({
+                'name': 'מרצה',
+                'label_position': 'low',
+                'num_font': {'rotation': -45},  # סיבוב הטקסט בעברית
+            })
+            chart.set_y_axis({'name': 'כמות שיעורים'})
+
+            chart.set_legend({'position': 'bottom'})
+            chart.set_style(10)
+
+            worksheet.insert_chart('F2', chart)
+
     else:
         return "Invalid report type", 400
 
@@ -265,23 +594,25 @@ def generate_report():
     conn.close()
     return send_file(output, download_name=f"{report_type}_report.xlsx", as_attachment=True)
 
-# Visualization API: Sheltered classroom status
+###########################
+
+
 @app.route('/api/classroom_shelter_status')
-def api_classroom_shelter_status():
+def classroom_shelter_status():
     building_id = request.args.get('building_id')
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
+    if not building_id:
+        return jsonify([])
+
+    cursor = db.cursor(dictionary=True)
     cursor.execute("""
-        SELECT classroom_num AS Classroom, is_sheltered AS Sheltered
+        SELECT classroom_num AS Classroom,
+               is_sheltered AS Sheltered
         FROM classrooms
         WHERE building_id = %s
     """, (building_id,))
-    results = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    return jsonify(results)
-
-###########################
+    
+    data = cursor.fetchall()
+    return jsonify(data)
 
 
 @app.route('/')
