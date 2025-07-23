@@ -150,6 +150,22 @@ def students_per_day():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/course_distribution')
+def course_distribution():
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT course_id FROM courses")
+    rows = cursor.fetchall()
+
+    cs = sum(1 for row in rows if str(row['course_id']).startswith('203'))
+    is_ = sum(1 for row in rows if str(row['course_id']).startswith('214'))
+    other = len(rows) - cs - is_
+
+    return jsonify({
+        "Computer Science": cs,
+        "Information Systems": is_,
+        "Other": other
+    })
+
 @app.route('/api/hourly_students_by_day')
 def hourly_students_by_day():
     try:
