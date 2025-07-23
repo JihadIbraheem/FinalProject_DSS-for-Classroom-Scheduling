@@ -176,27 +176,35 @@ def hourly_students_by_day():
         conn = get_connection()
         cursor = conn.cursor(dictionary=True)
 
-        # נשלוף את כל השיעורים ליום שנבחר כולל שעת התחלה וסיום ומספר סטודנטים
-        cursor.execute("""
+        # שימוש ב-HOUR() במקום TIME_FORMAT כדי להימנע מבעיות עם %
+        query = """
             SELECT
-                TIME_FORMAT(s.time_start, '%H') AS hour,
+                HOUR(s.time_start) AS start_hour,
+                HOUR(s.time_end) AS end_hour,
                 co.students_num
             FROM schedules s
             JOIN courses co ON s.course_id = co.course_id
             WHERE s.weekday = %s
               AND co.students_num IS NOT NULL
-        """, (day,))
+        """
+
+        cursor.execute(query, (day,))
         rows = cursor.fetchall()
         conn.close()
 
-        # הכנה של מילון שעות מ-08 עד 20 (או לפי מה שמתאים למוסד)
+        # מילון של שעות עם ערך התחלתי 0
         hourly_counts = {str(h).zfill(2): 0 for h in range(8, 21)}
 
-        # נחשב כמה סטודנטים יש בכל שעה – נניח ששיעור נחשב לפי שעת התחלתו בלבד
+        # חישוב העומס לפי כל שעה בה השיעור פעיל
         for row in rows:
-            hour = row['hour']
-            if hour in hourly_counts:
-                hourly_counts[hour] += row['students_num']
+            start_hour = row['start_hour']
+            end_hour = row['end_hour']
+            students = row['students_num']
+
+            for h in range(start_hour, end_hour):
+                h_str = str(h).zfill(2)
+                if h_str in hourly_counts:
+                    hourly_counts[h_str] += students
 
         return jsonify(hourly_counts)
 

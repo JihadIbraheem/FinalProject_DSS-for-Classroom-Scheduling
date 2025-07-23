@@ -448,7 +448,6 @@ window.addEventListener('DOMContentLoaded', () => {
 
 
 document.getElementById('hourlyDaySelect').addEventListener('change', loadHourlyStudentChart);
-
 async function loadHourlyStudentChart() {
   const day = document.getElementById('hourlyDaySelect').value;
   const res = await fetch(`/api/hourly_students_by_day?day=${encodeURIComponent(day)}`);
@@ -460,13 +459,20 @@ async function loadHourlyStudentChart() {
     window.hourlyChartInstance.destroy();
   }
 
+  // מיון השעות לפי סדר עולה (מספרי)
+  const sortedHours = Object.keys(data).sort((a, b) => {
+    const ha = parseInt(a);
+    const hb = parseInt(b);
+    return ha - hb;
+  });
+
   window.hourlyChartInstance = new Chart(ctx, {
     type: 'line',
     data: {
-      labels: Object.keys(data),
+      labels: sortedHours,
       datasets: [{
         label: 'Total Students',
-        data: Object.values(data),
+        data: sortedHours.map(h => data[h]),
         borderColor: '#2563eb',
         backgroundColor: 'rgba(37,99,235,0.2)',
         tension: 0.3,
@@ -496,6 +502,7 @@ async function loadHourlyStudentChart() {
     }
   });
 }
+
 
 document.addEventListener('DOMContentLoaded', async () => {
   const res = await fetch('/api/course_distribution');
