@@ -567,48 +567,48 @@ def generate_report():
             sheet.conditional_format('Z2:Z1000', {
                 'type': 'cell', 'criteria': '<', 'value': 30, 'format': red
             })
-
+            
     elif report_type == 'lecturer_utilization':
         df = pd.read_sql("""
-            SELECT 
-                co.lecturer_name AS `Lecturer`,
-                COUNT(*) AS `Number of Lessons`,
-                COUNT(DISTINCT s.weekday) AS `Days Teaching`,
-                COUNT(DISTINCT s.time_start) AS `Unique Start Times`
-            FROM schedules s
-            JOIN courses co ON s.course_id = co.course_id
-            GROUP BY co.lecturer_name
-            ORDER BY `Number of Lessons` DESC
-        """, conn)
-
+        SELECT 
+            COALESCE(co.lecturer_name, 'לא צוין') AS `Lecturer`,
+            COUNT(*) AS `Number of Lessons`,
+            COUNT(DISTINCT s.weekday) AS `Days Teaching`,
+            SUM(TIMESTAMPDIFF(MINUTE, s.time_start, s.time_end)) / 60 AS `Total Teaching Hours`
+        FROM schedules s
+        JOIN courses co ON s.course_id = co.course_id
+        GROUP BY co.lecturer_name
+        ORDER BY `Number of Lessons` DESC
+    """, conn)
+        
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             df.to_excel(writer, index=False, sheet_name='Lecturer Utilization')
-
+            
             workbook = writer.book
             worksheet = writer.sheets['Lecturer Utilization']
 
-            # הגרף - Top 10 עם תוויות
+        # הגרף – Top 10 מרצים לפי מספר שיעורים
             chart = workbook.add_chart({'type': 'column'})
 
-            chart.add_series({
-                'name': 'Number of Lessons',
-                'categories': ['Lecturer Utilization', 1, 0, 10, 0],  # שמות המרצים
-                'values':     ['Lecturer Utilization', 1, 1, 10, 1],  # מספר שיעורים
-                'data_labels': {'value': True},  # תוויות ערכים
-            })
+        chart.add_series({
+            'name': 'Number of Lessons',
+            'categories': ['Lecturer Utilization', 1, 0, min(10, len(df)), 0],  # שמות המרצים
+            'values':     ['Lecturer Utilization', 1, 1, min(10, len(df)), 1],  # מספר שיעורים
+            'data_labels': {'value': True},
+        })
 
-            chart.set_title({'name': 'מספר שיעורים – 10 מרצים ראשונים'})
-            chart.set_x_axis({
-                'name': 'מרצה',
-                'label_position': 'low',
-                'num_font': {'rotation': -45},  # סיבוב הטקסט בעברית
-            })
-            chart.set_y_axis({'name': 'כמות שיעורים'})
+        chart.set_title({'name': 'מספר שיעורים – 10 מרצים ראשונים'})
+        chart.set_x_axis({
+            'name': 'מרצה',
+            'label_position': 'low',
+            'num_font': {'rotation': -45},
+        })
+        chart.set_y_axis({'name': 'כמות שיעורים'})
+        chart.set_legend({'position': 'bottom'})
+        chart.set_style(10)
 
-            chart.set_legend({'position': 'bottom'})
-            chart.set_style(10)
+        worksheet.insert_chart('G2', chart)
 
-            worksheet.insert_chart('F2', chart)
 
     else:
         return "Invalid report type", 400
@@ -619,6 +619,27 @@ def generate_report():
     return send_file(output, download_name=f"{report_type}_report.xlsx", as_attachment=True)
 
 ###########################
+
+@app.route('/api/students_by_day_and_building')
+def students_by_day_and_building():
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    cursor.execute("""
+        SELECT 
+            s.weekday,
+            b.building_name,
+            SUM(co.students_num) AS total_students
+        FROM schedules s
+        JOIN courses co ON s.course_id = co.course_id
+        JOIN classrooms c ON s.classroom_id = c.classroom_id
+        JOIN buildings b ON c.building_id = b.building_id
+        WHERE co.students_num IS NOT NULL
+        GROUP BY s.weekday, b.building_name
+    """)
+    
+    results = cursor.fetchall()
+    return jsonify(results)
 
 
 @app.route('/api/classroom_shelter_status')

@@ -226,19 +226,80 @@ select:focus, input[type="time"]:focus {
 </div>
 
 <!-- Daily Student Count Card -->
-<div class="stats-card">
-  <h2 style="text-align:center; font-size: 1.9rem; color: #1E3A8A; margin-bottom: 1.5rem; text-shadow: 1px 1px 2px rgba(0,0,0,0.1);">
-    <i class="fas fa-users"></i> Daily Student Count
+<div class="stats-card" style="margin-top: 2rem;">
+  <h2 style="
+    text-align: center;
+    font-size: 2rem;
+    color: #1E3A8A;
+    margin-bottom: 2rem;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.08);
+  ">
+    <i class="fas fa-users" style="margin-left: 0.5rem;"></i> Daily Student Count
   </h2>
-  <section class="chart-box" style="padding: 2rem 2.5rem; border-radius: 1.25rem; background: #ffffff; box-shadow: 0 6px 16px rgba(0,0,0,0.08); display: flex; flex-direction: column; align-items: center; gap: 2rem;">
-    <h3 style="font-size: 1.6rem; font-weight: 600; color: #1E3A8A; text-align: center; margin-bottom: 0;">Total Students per Day</h3>
-    <canvas id="dailyStudentChart" width="500" height="300"></canvas>
+
+  <!-- גרף יומי -->
+  <section class="chart-box" style="
+    padding: 2.5rem 3rem;
+    border-radius: 1.5rem;
+    background: #ffffff;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.08);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    max-width: 1100px;
+    margin: auto auto 3rem;
+    gap: 2rem;
+  ">
+    <h3 style="
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #1E3A8A;
+      text-align: center;
+      margin: 0;
+    ">
+      Total Students per Day by Building
+    </h3>
+    <div style="width: 100%; height: 500px;">
+      <canvas id="dailyStudentChart" style="width: 100%; height: 100%;"></canvas>
+    </div>
   </section>
-  <section class="chart-box" style="padding: 2rem 2.5rem; border-radius: 1.25rem; background: #ffffff; box-shadow: 0 6px 16px rgba(0,0,0,0.08); display: flex; flex-direction: column; align-items: center; gap: 1.5rem;">
-    <h3 style="font-size: 1.6rem; font-weight: 600; color: #1E3A8A; text-align: center;">Hourly Student Load</h3>
-    <div style="width: 100%; max-width: 300px; text-align: center;">
-      <label for="hourlyDaySelect" style="display:block; margin-bottom: 0.5rem; font-weight: 600;">Select Day of Week:</label>
-      <select id="hourlyDaySelect" style="width: 100%; padding: 0.7rem 1rem; border-radius: 0.75rem; border: 1px solid #ccc; font-size: 1rem; background: #f9fafb;">
+
+  <!-- גרף לפי שעות -->
+  <section class="chart-box" style="
+    padding: 2.5rem 3rem;
+    border-radius: 1.5rem;
+    background: #ffffff;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.08);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    max-width: 1100px;
+    margin: auto;
+    gap: 2rem;
+  ">
+    <h3 style="
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #1E3A8A;
+      text-align: center;
+      margin: 0;
+    ">
+      Hourly Student Load
+    </h3>
+    <div style="width: 250px; text-align: center;">
+      <label for="hourlyDaySelect" style="display: block; margin-bottom: 0.5rem; font-weight: 600;">
+        Select Day of Week:
+      </label>
+      <select id="hourlyDaySelect" style="
+        width: 100%;
+        padding: 0.7rem 1rem;
+        border-radius: 0.75rem;
+        border: 1px solid #ccc;
+        font-size: 1rem;
+        background: #f9fafb;
+      ">
         <option value="א'">א'</option>
         <option value="ב'">ב'</option>
         <option value="ג'">ג'</option>
@@ -247,12 +308,16 @@ select:focus, input[type="time"]:focus {
         <option value="ו'">ו'</option>
       </select>
     </div>
-    <canvas id="hourlyStudentChart" width="500" height="300"></canvas>
+    <div style="width: 100%; height: 450px;">
+      <canvas id="hourlyStudentChart" style="width: 100%; height: 100%;"></canvas>
+    </div>
   </section>
-  <p style="font-size: 0.9rem; color: #6b7280; margin-top: 0.5rem; text-align:center;">
+
+  <p style="font-size: 0.9rem; color: #6b7280; margin-top: 1.5rem; text-align: center;">
     Note: Students may appear in multiple time slots if they attend multiple courses.
   </p>
 </div>
+
 
 <!-- Sheltered Classroom Analysis Card -->
 <div class="stats-card">
@@ -401,36 +466,89 @@ reportType.addEventListener('change', () => {
       loadShelterChart();
     }
 
-  async function loadDailyStudentChart() {
-  const res = await fetch('/api/students_per_day');
-  const data = await res.json();
+async function loadDailyStudentChart() {
+  const res = await fetch('/api/students_by_day_and_building');
+  const rawData = await res.json();
 
   const days = ["א'", "ב'", "ג'", "ד'", "ה'", "ו'"];
-  const values = days.map(d => data[d] || 0);
+  const buildingColors = {
+    "בניין דילן טאובר": "#a78bfa",    // סגול
+    "אולפן עציון": "#6ee7b7",         // ירוק
+    "הכשרת היישוב": "#f472b6",        // ורוד
+    "בניין עמיר": "#fde047",          // צהוב
+  };
+
+  const buildingsSet = new Set();
+  const dataByBuilding = {};
+
+  rawData.forEach(entry => {
+    const day = entry.weekday;
+    const building = entry.building_name;
+    const students = entry.total_students;
+
+    buildingsSet.add(building);
+    if (!dataByBuilding[building]) {
+      dataByBuilding[building] = {};
+    }
+    dataByBuilding[building][day] = students;
+  });
+
+  const buildings = Array.from(buildingsSet);
+  const datasets = buildings.map(building => ({
+    label: building,
+    data: days.map(day => dataByBuilding[building]?.[day] || 0),
+    backgroundColor: buildingColors[building] || '#ccc',
+    stack: 'total',
+    borderRadius: 6,
+    barPercentage: 0.75,
+    categoryPercentage: 0.6
+  }));
 
   const ctx = document.getElementById('dailyStudentChart').getContext('2d');
-  new Chart(ctx, {
+  if (window.dailyStudentChartInstance) {
+    window.dailyStudentChartInstance.destroy();
+  }
+
+  window.dailyStudentChartInstance = new Chart(ctx, {
     type: 'bar',
     data: {
       labels: days,
-      datasets: [{
-        label: 'Total Students',
-        data: values,
-        backgroundColor: '#a5b4fc',
-        borderRadius: 10
-      }]
+      datasets: datasets
     },
     options: {
+      responsive: true,
       plugins: {
-        legend: { display: false },
         tooltip: {
+          mode: 'index',
+          intersect: false,
           callbacks: {
-            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y} students`
-          }
+            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y} students`,
+            footer: items => {
+              const total = items.reduce((sum, i) => sum + i.parsed.y, 0);
+              return `Total: ${total} students`;
+            }
+          },
+          footerFont: { weight: 'bold' }
+        },
+        legend: { position: 'bottom' },
+        title: {
+          display: true,
+          text: 'Total Students per Day by Building',
+          font: { size: 18 }
         }
       },
+      interaction: {
+        mode: 'nearest',
+        axis: 'x',
+        intersect: false
+      },
       scales: {
+        x: {
+          stacked: true,
+          title: { display: true, text: 'Day of Week' }
+        },
         y: {
+          stacked: true,
           beginAtZero: true,
           title: { display: true, text: 'Number of Students' }
         }
@@ -439,15 +557,20 @@ reportType.addEventListener('change', () => {
   });
 }
 
+function getRandomColor() {
+  const letters = '789ABCD';
+  return '#' + Array.from({ length: 6 }, () => letters[Math.floor(Math.random() * letters.length)]).join('');
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   loadDailyStudentChart();
   document.getElementById('hourlyDaySelect').value = "א'";
   loadHourlyStudentChart();
-
 });
 
-
 document.getElementById('hourlyDaySelect').addEventListener('change', loadHourlyStudentChart);
+
+
 async function loadHourlyStudentChart() {
   const day = document.getElementById('hourlyDaySelect').value;
   const res = await fetch(`/api/hourly_students_by_day?day=${encodeURIComponent(day)}`);
@@ -459,12 +582,8 @@ async function loadHourlyStudentChart() {
     window.hourlyChartInstance.destroy();
   }
 
-  // מיון השעות לפי סדר עולה (מספרי)
-  const sortedHours = Object.keys(data).sort((a, b) => {
-    const ha = parseInt(a);
-    const hb = parseInt(b);
-    return ha - hb;
-  });
+  // מיון השעות לפי סדר עולה
+  const sortedHours = Object.keys(data).sort((a, b) => parseInt(a) - parseInt(b));
 
   window.hourlyChartInstance = new Chart(ctx, {
     type: 'line',
@@ -474,29 +593,63 @@ async function loadHourlyStudentChart() {
         label: 'Total Students',
         data: sortedHours.map(h => data[h]),
         borderColor: '#2563eb',
-        backgroundColor: 'rgba(37,99,235,0.2)',
-        tension: 0.3,
+        backgroundColor: 'rgba(37, 99, 235, 0.2)',
+        pointBackgroundColor: '#2563eb',
+        pointBorderColor: '#2563eb',
         pointRadius: 5,
-        pointHoverRadius: 7
+        pointHoverRadius: 7,
+        fill: true,
+        tension: 0.4
       }]
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
+      layout: {
+        padding: 20
+      },
       plugins: {
-        legend: { display: false },
+        title: {
+          display: true,
+          text: `Hourly Student Load on ${day}`,
+          font: {
+            size: 20
+          },
+          color: '#1E3A8A'
+        },
         tooltip: {
           callbacks: {
-            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y} students`
-          }
+            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y} `
+          },
+          backgroundColor: '#f3f4f6',
+          titleColor: '#1E3A8A',
+          bodyColor: '#111827',
+        },
+        legend: {
+          display: false
         }
       },
       scales: {
+        x: {
+          title: {
+            display: true,
+            text: 'Hour of Day',
+            font: { size: 14 }
+          },
+          ticks: {
+            font: { size: 12 }
+          }
+        },
         y: {
           beginAtZero: true,
-          title: { display: true, text: 'Number of Students' }
-        },
-        x: {
-          title: { display: true, text: 'Hour' }
+          title: {
+            display: true,
+            text: 'Number of Students',
+            font: { size: 14 }
+          },
+          ticks: {
+            font: { size: 12 }
+          }
         }
       }
     }
