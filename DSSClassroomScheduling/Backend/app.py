@@ -33,10 +33,10 @@ app.static_folder = '../Frontend/src'
 app.secret_key = 'your_secret_key'
 
 db = mysql.connector.connect(
-    host="34.165.87.21",
-    user="admin",
-    password="Admin2025!", 
-    database="classroom_scheduler"
+    host=os.getenv("DB_HOST"),
+    user=os.getenv("DB_USER"),
+    password=os.getenv("DB_PASSWORD"),
+    database=os.getenv("DB_NAME")
 )
 
 
@@ -44,11 +44,11 @@ db = mysql.connector.connect(
 
 def get_connection():
     return mysql.connector.connect(
-        host="34.165.87.21",
-        user="admin",
-        password="Admin2025!",
-        database="classroom_scheduler"
-    )
+    host=os.getenv("DB_HOST"),
+    user=os.getenv("DB_USER"),
+    password=os.getenv("DB_PASSWORD"),
+    database=os.getenv("DB_NAME")
+)
 
 reports_bp = Blueprint('reports', __name__)
 
