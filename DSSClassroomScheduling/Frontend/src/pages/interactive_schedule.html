@@ -329,11 +329,11 @@ letter-spacing: 1px;
 
 <div style="display: flex; justify-content: center; gap: 15px; margin-bottom: 20px;">
 <button onclick="openAddScheduleModal()" class="button-glass button-green">
-  ➕ Add New Schedule
+  Add New Schedule
 </button>
 
 <button onclick="toggleHistory()" id="history-toggle" class="button-glass button-green">
-  📜 Show Schedule History
+  Show Schedule History
 </button>
 
 <button onclick="toggleShowOnlyIssues()" id="issues-toggle" class="button-glass button-red">
@@ -466,6 +466,7 @@ letter-spacing: 1px;
 
     <label>Weekday</label>
     <select id="new-weekday">
+      <option value="">No Preference</option>
       <option value="א'">א'</option>
       <option value="ב'">ב'</option>
       <option value="ג'">ג'</option>
@@ -474,14 +475,17 @@ letter-spacing: 1px;
       <option value="ו'">ו'</option>
     </select>
 
+
     <label>Remote Learning</label>
     <select id="new-remote">
+      <option value="">Doesn't matter</option>
       <option value="yes">Yes</option>
       <option value="no">No</option>
     </select>
 
     <label>Sheltered Room</label>
     <select id="new-sheltered">
+      <option value="">Doesn't matter</option>
       <option value="no">No</option>
       <option value="yes">Yes</option>
     </select>
@@ -661,6 +665,7 @@ function renderCards() {
     const hasLecturerIssue = !r.lecturer_name || r.lecturer_name.trim() === '';
     const hasStudentsIssue = !r.students_num || r.students_num < 1;
     const hasIssue = hasLecturerIssue || hasStudentsIssue;
+    const isOneTime = !!r.schedule_end_date;
 
     let issueTooltip = '';
     if (hasLecturerIssue && hasStudentsIssue) {
@@ -696,7 +701,7 @@ function renderCards() {
       card.style.boxShadow = "0 0 8px rgba(220, 38, 38, 0.3)";
       card.style.position = "relative";
 
-      warningMessage = `
+      warningMessage += `
         <div style="
           background-color: #DC2626;
           color: white;
@@ -710,6 +715,22 @@ function renderCards() {
           align-items: center;
           gap: 8px;">
           ⚠️ Students exceed classroom capacity!
+        </div>`;
+    }
+
+    if (isOneTime) {
+      warningMessage += `
+        <div style="
+          background: linear-gradient(to right, #FDE68A, #FBBF24);
+          color: #92400E;
+          padding: 6px 12px;
+          border-radius: 8px;
+          font-weight: 600;
+          font-size: 0.9rem;
+          margin-top: 8px;
+          box-shadow: 0 0 4px rgba(251, 191, 36, 0.4);
+          display: inline-block;">
+          📅 One-Time Schedule: ${new Date(r.schedule_end_date).toLocaleDateString()}
         </div>`;
     }
 
@@ -746,11 +767,7 @@ function renderCards() {
           border-radius: 6px;
           font-weight: bold;
           cursor: pointer;
-          transition: 0.3s;
-        " onmouseover="this.style.backgroundColor='#2563EB'; this.style.transform='scale(1.05)'"
-          onmouseout="this.style.backgroundColor='#3B82F6'; this.style.transform='scale(1)'">
-          Edit Schedule
-        </button>
+          transition: 0.3s;">Edit Schedule</button>
 
         <button onclick='editCourse(
           ${JSON.stringify(r.course_id || "")}, 
@@ -765,11 +782,7 @@ function renderCards() {
           border-radius: 6px;
           font-weight: bold;
           cursor: pointer;
-          transition: 0.3s;
-        " onmouseover="this.style.backgroundColor='#059669'; this.style.transform='scale(1.05)'"
-          onmouseout="this.style.backgroundColor='#10B981'; this.style.transform='scale(1)'">
-          Fix Course Info
-        </button>
+          transition: 0.3s;">Fix Course Info</button>
 
         <button onclick="confirmDelete('${r.schedule_id}', '${r.course_id}')" style="
           background-color: #DC2626;
@@ -779,11 +792,7 @@ function renderCards() {
           border-radius: 6px;
           font-weight: bold;
           cursor: pointer;
-          transition: 0.3s;
-        " onmouseover="this.style.backgroundColor='#B91C1C'; this.style.transform='scale(1.05)'"
-          onmouseout="this.style.backgroundColor='#DC2626'; this.style.transform='scale(1)'">
-          🗑️ Delete
-        </button>
+          transition: 0.3s;">🗑️ Delete</button>
       </div>
     `;
 
@@ -812,7 +821,7 @@ function toggleHistory() {
     loadScheduleHistory();  
   } else {
     historySection.style.display = 'none';
-    toggleBtn.textContent = '📜 Show Schedule History';
+    toggleBtn.textContent = 'Show Schedule History';
   }
 }
 
@@ -830,11 +839,16 @@ function closeCourseModal() {
 }
 
 async function submitCourseEdit() {
+  const courseId = document.getElementById('edit-course-id').value;
+  const courseName = document.getElementById('edit-course-name').value;
+  const lecturerName = document.getElementById('edit-lecturer-name').value;
+  const studentsInput = document.getElementById('edit-students-num').value.trim();
+
   const data = {
-    course_id: document.getElementById('edit-course-id').value,
-    course_name: document.getElementById('edit-course-name').value,
-    lecturer_name: document.getElementById('edit-lecturer-name').value,
-    students_num: parseInt(document.getElementById('edit-students-num').value)
+    course_id: courseId,
+    course_name: courseName,
+    lecturer_name: lecturerName,
+    students_num: studentsInput === '' ? null : parseInt(studentsInput)
   };
 
   const res = await fetch('/api/update_course_info', {
@@ -934,17 +948,17 @@ async function submitNewSchedule() {
   const endDate = document.getElementById('new-end-date').value;
   const isOneTime = document.getElementById('is-onetime').value === 'yes';
 
-  // Check: Duration must not exceed 8 hours
+  // בדיקה: משך זמן חייב להיות בין 0 ל־8
   if (duration > 8 || duration < 0) {
     alert("Duration must be between 0 and 8.");
     return;
   }
 
-  // Check: End date must be in the future if one-time schedule
+  // בדיקה: תאריך סיום חייב להיות עתידי אם מדובר בשיבוץ חד־פעמי
   if (isOneTime && endDate) {
     const today = new Date();
     const inputDate = new Date(endDate);
-    today.setHours(0, 0, 0, 0);  // Normalize time
+    today.setHours(0, 0, 0, 0);
     inputDate.setHours(0, 0, 0, 0);
     if (inputDate <= today) {
       alert("End date must be in the future.");
@@ -952,7 +966,7 @@ async function submitNewSchedule() {
     }
   }
 
-  // Check: Number of students must not exceed max classroom capacity
+  // בדיקה: מספר הסטודנטים לא יכול לחרוג מהקיבולת המקסימלית
   const capacityResponse = await fetch('/api/get_max_capacity');
   const { max_capacity } = await capacityResponse.json();
   if (studentsNum > max_capacity || studentsNum < 0) {
@@ -960,20 +974,26 @@ async function submitNewSchedule() {
     return;
   }
 
-  // Data to send
+  // קריאה לערכים מהשדות
+  const weekday = document.getElementById('new-weekday').value;
+  const remoteLearning = document.getElementById('new-remote').value;
+  const shelteredRoom = document.getElementById('new-sheltered').value;
+
+  // הכנה לנתונים לשיגור לשרת
   const data = {
     course_id: document.getElementById('new-course-id').value,
     course_name: document.getElementById('new-course-name').value,
     lecturer_name: document.getElementById('new-lecturer').value,
     students_num: studentsNum,
     duration: duration,
-    weekday: document.getElementById('new-weekday').value,
-    is_remote_learning: document.getElementById('new-remote').value,
-    is_sheltered: document.getElementById('new-sheltered').value,
+    weekday: weekday !== "" ? weekday : null,
+    is_remote_learning: remoteLearning !== "" ? remoteLearning : null,
+    is_sheltered: shelteredRoom !== "" ? shelteredRoom : null,
     is_onetime: isOneTime ? 'yes' : 'no',
     schedule_end_date: endDate || null
   };
 
+  // שליחת הנתונים
   const res = await fetch('/api/add_schedule_from_ui', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -989,6 +1009,7 @@ async function submitNewSchedule() {
     alert("Error: " + result.message);
   }
 }
+
 
 document.addEventListener("DOMContentLoaded", function () {
   fetch('/api/buildings')

@@ -1481,7 +1481,6 @@ def reject_conflict_direct():
         return redirect(url_for('upload'))
 
 
-
 @app.route('/api/add_schedule_from_ui', methods=['POST'])
 def add_schedule_from_ui():
     data = request.get_json()
@@ -1492,68 +1491,69 @@ def add_schedule_from_ui():
         lecturer_name = data['lecturer_name']
         students_num = int(data['students_num'])
         duration_hours = float(data['duration'])
-        weekday = data['weekday']
         schedule_end_date = data.get('schedule_end_date')
 
-        # פענוח הערכים של Remote Learning ו-Sheltered
-        is_remote_raw = str(data['is_remote_learning']).strip().lower()
-        is_sheltered_raw = str(data['is_sheltered']).strip().lower()
-
-        # המרה לערכים לוגיים או None אם 'any'
+        # פענוח Remote Learning
+        is_remote_raw = str(data.get('is_remote_learning', '')).strip().lower()
         is_remote = None
         if is_remote_raw == 'yes':
             is_remote = 1
         elif is_remote_raw == 'no':
             is_remote = 0
 
+        # פענוח Sheltered Room
+        is_sheltered_raw = str(data.get('is_sheltered', '')).strip().lower()
         is_sheltered = None
         if is_sheltered_raw == 'yes':
             is_sheltered = 1
         elif is_sheltered_raw == 'no':
             is_sheltered = 0
 
+        # פענוח יום השבוע
+        weekday_raw = data.get('weekday')
+        weekdays = ["א'", "ב'", "ג'", "ד'", "ה'", "ו'"]
+        weekdays_to_try = weekdays if weekday_raw in ["", None, "No Preference"] else [weekday_raw]
+
         duration_minutes = int(duration_hours * 60)
 
         with db.cursor(buffered=True) as cursor:
-            # בניית שאילתה דינאמית
+            # בניית שאילתה דינאמית למציאת כיתות
             query = "SELECT classroom_id FROM classrooms WHERE capacity >= %s"
             params = [students_num]
-
             if is_remote is not None:
                 query += " AND is_remote_learning = %s"
                 params.append(is_remote)
-
             if is_sheltered is not None:
                 query += " AND is_sheltered = %s"
                 params.append(is_sheltered)
-
             query += " ORDER BY capacity ASC"
             cursor.execute(query, tuple(params))
             classrooms = cursor.fetchall()
 
             def try_schedule():
-                for classroom in classrooms:
-                    classroom_id = classroom[0]
-                    cursor.execute("""
-                        SELECT time_start, time_end FROM schedules
-                        WHERE classroom_id = %s AND weekday = %s
-                        ORDER BY time_start
-                    """, (classroom_id, weekday))
-                    busy_times = cursor.fetchall()
+                for day in weekdays_to_try:
+                    for classroom in classrooms:
+                        classroom_id = classroom[0]
+                        cursor.execute("""
+                            SELECT time_start, time_end FROM schedules
+                            WHERE classroom_id = %s AND weekday = %s
+                            ORDER BY time_start
+                        """, (classroom_id, day))
+                        busy_times = cursor.fetchall()
 
-                    current_time = datetime.strptime("08:00:00", "%H:%M:%S")
-                    end_of_day = datetime.strptime("18:00:00", "%H:%M:%S")
+                        current_time = datetime.strptime("08:00:00", "%H:%M:%S")
+                        end_of_day = datetime.strptime("18:00:00", "%H:%M:%S")
 
-                    for bt in busy_times + [(end_of_day.time(), end_of_day.time())]:
-                        next_start = datetime.strptime(str(bt[0]), "%H:%M:%S")
-                        potential_end = current_time + timedelta(minutes=duration_minutes)
+                        for bt in busy_times + [(end_of_day.time(), end_of_day.time())]:
+                            next_start = datetime.strptime(str(bt[0]), "%H:%M:%S")
+                            potential_end = current_time + timedelta(minutes=duration_minutes)
 
-                        if potential_end <= next_start:
-                            return classroom_id, current_time.time(), potential_end.time()
-                        current_time = datetime.strptime(str(bt[1]), "%H:%M:%S")
-                return None, None, None
+                            if potential_end <= next_start:
+                                return classroom_id, current_time.time(), potential_end.time(), day
+                            current_time = datetime.strptime(str(bt[1]), "%H:%M:%S")
+                return None, None, None, None
 
-            classroom_id, time_start, time_end = try_schedule()
+            classroom_id, time_start, time_end, final_weekday = try_schedule()
 
             if not classroom_id:
                 return jsonify(success=False, message="No available classroom found. The schedule was not saved.")
@@ -1571,7 +1571,7 @@ def add_schedule_from_ui():
             """, (
                 classroom_id,
                 course_id,
-                weekday,
+                final_weekday,
                 time_start,
                 time_end,
                 schedule_end_date if schedule_end_date else None
@@ -1582,7 +1582,6 @@ def add_schedule_from_ui():
 
     except Exception as e:
         return jsonify(success=False, message=str(e))
-
 
 @app.route('/delete_data', methods=['POST'])
 def delete_data():
@@ -2407,6 +2406,7 @@ def api_schedules():
                   s.weekday,
                   s.time_start,
                   s.time_end,
+                  s.schedule_datetime AS schedule_end_date, 
                   c.is_remote_learning,
                   c.is_sheltered,
                   c.capacity AS classroom_capacity
@@ -2438,6 +2438,9 @@ def api_schedules():
                 row["exceeds_capacity"] = students > capacity
             except:
                 row["exceeds_capacity"] = False
+
+            # סימון אם זה שיבוץ חד פעמי
+            row["is_onetime"] = bool(row.get("schedule_end_date"))
 
         db.close()  
         return jsonify(schedules=rows)
