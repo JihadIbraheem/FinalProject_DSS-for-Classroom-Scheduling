@@ -1134,19 +1134,20 @@ def resolve_conflict_direct():
 
         selected_classroom_id = int(selected_classroom_id)
 
+        course_id = course_data['course_id']
+        course_name = course_data['course_name']
+        students_num = course_data.get('students_num', 0)
+        lecturer_name = course_data.get('lecturer_name', '')
+
         # הכנס קורס אם לא קיים
         with db.cursor() as cursor:
-            cursor.execute("SELECT COUNT(*) FROM courses WHERE course_id = %s", (course_data['course_id'],))
+            cursor.execute("SELECT COUNT(*) FROM courses WHERE course_id = %s", (course_id,))
             exists = cursor.fetchone()[0]
             if not exists:
                 cursor.execute("""
-                    INSERT INTO courses (course_id, course_name, students_num)
-                    VALUES (%s, %s, %s)
-                """, (
-                    course_data['course_id'],
-                    course_data['course_name'],
-                    course_data['students_num']
-                ))
+                    INSERT INTO courses (course_id, course_name, students_num, lecturer_name)
+                    VALUES (%s, %s, %s, %s)
+                """, (course_id, course_name, students_num, lecturer_name))
                 db.commit()
 
         # הכנס לשיבוץ
@@ -1156,7 +1157,7 @@ def resolve_conflict_direct():
                 VALUES (%s, %s, %s, %s, %s)
             """, (
                 selected_classroom_id,
-                course_data['course_id'],
+                course_id,
                 weekday,
                 start_time,
                 end_time
@@ -1169,7 +1170,7 @@ def resolve_conflict_direct():
 
         for conflict in pending_conflicts:
             if not (
-                conflict['course_data']['course_id'] == course_data['course_id'] and
+                conflict['course_data']['course_id'] == course_id and
                 conflict['weekday'] == weekday and
                 conflict['start_time'] == start_time and
                 conflict['end_time'] == end_time
@@ -1184,6 +1185,7 @@ def resolve_conflict_direct():
     except Exception as e:
         flash(f"Error during scheduling: {e}")
         return redirect(url_for('upload'))
+
 
 def insert_conflict_to_db(classroom_id, course_data, weekday, start_time, end_time):
     with db.cursor() as cursor:
